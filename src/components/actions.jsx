@@ -162,6 +162,7 @@ function fitDistanceForSize(camera, sizeVec, padding = 1.15) {
     .add(viewUp.multiplyScalar(shiftY * regionSize.y));
 
   animateCameraTo({ camera, controls, newTarget: target, newDistance: distance, duration });
+  console.log('[actions] stage1')
 }
 
 /* ============================================================================
@@ -230,6 +231,7 @@ export function focusModelSecondStageSmooth({
 
   const distance = fitDistanceForSize(camera, regionSize, padding);
   animateCameraTo({ camera, controls, newTarget: target, newDistance: distance, duration });
+  console.log('[actions] stage2')
 }
 
 /* Alias po polsku (opcjonalnie) */
@@ -313,6 +315,7 @@ export function focusModelThirdStageSmooth({
 
   const distance = fitDistanceForSize(camera, regionSize, padding);
   animateCameraTo({ camera, controls, newTarget: target, newDistance: distance, duration });
+  console.log('[actions] stage3')
 }
 
 
@@ -520,12 +523,14 @@ export async function focusModelFourthStageSmooth({
   finalTarget.add(viewUp   .multiplyScalar((finalScreenShift.y || 0) * regionSize.y));
 
   await animateCameraTo({ camera, controls, newTarget: finalTarget, newDistance: distance, duration: postMs });
+  console.log('[actions] stage4')
 }
 
 
 
 
-// Wystaw akcje w globalnym namespace, żeby WebView mógł je zawołać.
+// wystaw do globalu + log:
+
 if (typeof window !== 'undefined') {
   window.Nexus ??= {};
   window.Nexus.actions = {
@@ -533,8 +538,8 @@ if (typeof window !== 'undefined') {
     focusModelSecondStageSmooth,
     focusModelThirdStageSmooth,
     focusModelFourthStageSmooth,
+    // przykładowa akcja z danymi:
+    setMeasure: (val, unit) => console.log('[actions] setMeasure', val, unit),
   };
   console.log('[Nexus] actions registered:', Object.keys(window.Nexus.actions));
 }
-
-

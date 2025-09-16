@@ -2,76 +2,41 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
-
-// musi się wykonać side-effect z window.Nexus.actions:
 import './components/actions.jsx'
 
-;(function setupBridge(){
-  if (typeof window === 'undefined') return;
-  if (window.__NEXUS_BRIDGE_BOUND__) return;
-  window.__NEXUS_BRIDGE_BOUND__ = true;
+import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr';
 
-  function parseCallFromLocation() {
-    // 1) hash: #!call=<json url-encoded>
-    const h = window.location.hash || '';
-    const mh = /^#!call=(.+)$/i.exec(h);
-    if (mh) {
-      try { return JSON.parse(decodeURIComponent(mh[1])); } catch { /* empty */ }
-    }
+(function connect() {
+  const sp = new URLSearchParams(location.search);
+  const hubParam = sp.get('hub'); // np. "http://127.0.0.1:5183/nexus"
+  const url = hubParam || 'http://127.0.0.1:5177/nexus';
 
-    // 2) query: ?__nexusCall=<json url-encoded>
-    const sp = new URLSearchParams(window.location.search);
-    const q = sp.get('__nexusCall');
-    if (q) {
-      try { return JSON.parse(decodeURIComponent(q)); } catch { /* empty */ }
-    }
-    return null;
-  }
+  if (window.__NEXUS_CONN__) return;
 
-  function clearConsumedCommand() {
-    // nie psuj routingu: czyść tylko fragment/param polecenia
-    const url = new URL(window.location.href);
-    url.hash = '';              // czyścimy hash komend
-    url.searchParams.delete('__nexusCall');
-    window.history.replaceState({}, '', url);
-  }
+  const conn = new HubConnectionBuilder()
+    .withUrl(url)
+    .withAutomaticReconnect()
+    .configureLogging(LogLevel.Information)
+    .build();
 
-  async function handleCall(payload) {
-    const { id, name, args } = payload || {};
+  conn.on('call', ({ name, args }) => {
     const fn = window?.Nexus?.actions?.[name];
-    console.log('[NexusBridge] incoming:', payload, 'available:', Object.keys(window?.Nexus?.actions || {}));
+    if (typeof fn === 'function') { try { fn(...(args ?? [])); } catch (e) { console.warn('[SignalR] action error', e); } }
+    else { console.warn('[SignalR] missing:', name, 'available:', Object.keys(window?.Nexus?.actions || {})); }
+  });
 
-    if (typeof fn === 'function') {
-      try {
-        await Promise.resolve(fn(...(args ?? [])));
-        document.title = '__ACK__ ' + JSON.stringify({ id, ok:true });
-        console.log('[NexusBridge] OK:', name);
-      } catch (err) {
-        document.title = '__ACK__ ' + JSON.stringify({ id, ok:false, error:String(err) });
-        console.warn('[NexusBridge] FAIL:', name, err);
-      }
-    } else {
-      console.warn('[NexusBridge] function not found:', name);
+  async function startWithRetry(delayMs = 1000) {
+    try {
+      await conn.start();
+      window.__NEXUS_CONN__ = conn;
+      console.log('[SignalR] connected', url);
+    } catch (e) {
+      console.error('[SignalR] connect failed, retrying…', e);
+      setTimeout(() => startWithRetry(Math.min(delayMs * 2, 8000)), delayMs);
     }
   }
 
-  function pump() {
-    const payload = parseCallFromLocation();
-    if (payload) {
-      handleCall(payload).finally(clearConsumedCommand);
-    }
-  }
-
-  window.addEventListener('hashchange', pump);
-  window.addEventListener('load', pump);
-  console.log('[NexusBridge] ready');
-  pump();
-
-  window.Nexus ??= {};
-  window.Nexus.test = (name, ...args) => {
-    const p = { id:'test', name, args };
-    location.hash = '#!call=' + encodeURIComponent(JSON.stringify(p));
-  };
+  startWithRetry();
 })();
 
 createRoot(document.getElementById('root')).render(
