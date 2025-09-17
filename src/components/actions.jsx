@@ -449,21 +449,58 @@ export function clearSummary() {
   window.dispatchEvent(new CustomEvent("nexus:summary:update", { detail: [] }));
 }
 
+// --- akcje wołane z C# (SignalR) ---
+
+export function showMeasure() {
+  window.Nexus ??= {}; window.Nexus.ui ??= {};
+  window.Nexus.ui.measureVisible = true;
+  window.dispatchEvent(new Event("nexus:measure:show"));
+}
+
+export function hideMeasure() {
+  window.Nexus ??= {}; window.Nexus.ui ??= {};
+  window.Nexus.ui.measureVisible = false;
+  window.dispatchEvent(new Event("nexus:measure:hide"));
+}
+
+export function clearMeasure() {
+  window.Nexus ??= {};
+  window.Nexus.lastMeasure = { value: null, unit: "mm", min: null, max: null };
+  window.dispatchEvent(new Event("nexus:measure:clear"));
+}
+
+// (zostawiasz swoje setMeasure / showSummary / hideSummary / clearSummary)
+
+
+
 // === REJESTRACJA WSZYSTKICH AKCJI ===
 if (typeof window !== "undefined") {
   window.Nexus ??= {};
-  window.Nexus.actions = {
-    // już istniejące:
+  const actions = (window.Nexus.actions ??= {});
+
+  Object.assign(actions, {
+    // fokusy
     focusModelFirstStageSmooth,
     focusModelSecondStageSmooth,
     focusModelThirdStageSmooth,
     focusModelFourthStageSmooth,
     focusStage,
-    // nowe / ważne dla podsumowania:
+
+    // pomiary
     setMeasure,
+    clearMeasure,
+    showMeasure,
+    hideMeasure,
+
+    // podsumowanie
     showSummary,
     hideSummary,
     clearSummary,
-  };
-  console.log("[Nexus] actions registered:", Object.keys(window.Nexus.actions));
+  });
+
+  if (!window.__NEXUS_ACTIONS_LOGGED__) {
+    window.__NEXUS_ACTIONS_LOGGED__ = true;
+    console.log("[Nexus] actions registered:", Object.keys(actions));
+  }
 }
+

@@ -5,11 +5,26 @@ export default function MeasureWidget({ topOffset = 18 }) {
   const [m, setM] = useState(() =>
     window.Nexus?.lastMeasure ?? { value: null, unit: "mm", min: null, max: null }
   );
+  const [visible, setVisible] = useState(() => window.Nexus?.ui?.measureVisible ?? false);
 
   useEffect(() => {
     function onMeasure(e) { setM(e.detail); }
+    function onShow() { setVisible(true); }
+    function onHide() { setVisible(false); }
+    function onClear() {
+      setM({ value: null, unit: "mm", min: null, max: null });
+    }
+
     window.addEventListener("nexus:measure", onMeasure);
-    return () => window.removeEventListener("nexus:measure", onMeasure);
+    window.addEventListener("nexus:measure:show", onShow);
+    window.addEventListener("nexus:measure:hide", onHide);
+    window.addEventListener("nexus:measure:clear", onClear);
+    return () => {
+      window.removeEventListener("nexus:measure", onMeasure);
+      window.removeEventListener("nexus:measure:show", onShow);
+      window.removeEventListener("nexus:measure:hide", onHide);
+      window.removeEventListener("nexus:measure:clear", onClear);
+    };
   }, []);
 
   const { value, unit, min, max } = m;
@@ -22,14 +37,17 @@ export default function MeasureWidget({ topOffset = 18 }) {
   }, [value, min, max]);
 
   const bg = (inRange === null)
-    ? "rgba(0,0,0,0.60)"      // brak danych → neutralny
+    ? "rgba(0,0,0,0.60)"
     : inRange
-      ? "rgba(0,160,80,0.85)" // w zakresie → zielony
-      : "rgba(200,0,40,0.85)";// poza zakresem → czerwony
+      ? "rgba(0,160,80,0.85)"
+      : "rgba(200,0,40,0.85)";
 
   const shown = (typeof value === "number" && !Number.isNaN(value))
     ? value.toFixed(2)
     : "—";
+
+  // ⬇️ jeśli ukryty – nie renderuj w ogóle:
+  if (!visible) return null;
 
   return (
     <div
@@ -39,7 +57,7 @@ export default function MeasureWidget({ topOffset = 18 }) {
         left: "50%",
         transform: "translateX(-50%)",
         zIndex: 1000,
-        pointerEvents: "none",                // nie blokuje 3D
+        pointerEvents: "none",
         background: bg,
         color: "white",
         padding: "14px 18px",
