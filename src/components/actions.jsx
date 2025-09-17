@@ -112,7 +112,7 @@ function orbitCameraAroundTarget({
 // ============================================================================
 export async function loadFromProjectAndRotateX(opts = {}) {
   const cfg = {
-    projectRelUrl: "../model/gltf/24388549_asm.gltf",
+    projectRelUrl: "../model/gltf/24388549.gltf",
     onLoading: () => {},
     onLoaded:  () => {},
     ...opts,
@@ -148,60 +148,93 @@ export async function loadFromProjectAndRotateX(opts = {}) {
 // ============================================================================
 // 2) Fokus: etap 1
 // ============================================================================
+// Pomocnik: uruchom dopiero gdy kamera/kontrolki/model są gotowe
+function runWhenReady(doWork, tries = 30, delayMs = 120) {
+  const r = window?.Nexus?.refs;
+  const camera   = r?.cameraRef?.current;
+  const controls = r?.controlsRef?.current;
+  const model    = r?.modelRef?.current;
+  if (camera && controls && model) { doWork({ camera, controls, model }); return; }
+  if (tries <= 0) { console.warn("[actions] stage1: refs not ready"); return; }
+  setTimeout(() => runWhenReady(doWork, tries - 1, delayMs), delayMs);
+}
+
 export function focusModelFirstStageSmooth(opts = {}) {
   const {
-    startFrac = 0.0, regionFrac = 0.14, padding = 1.04,
-    leftBiasN = -0.30, raiseN = -0.06, screenShift = { x: -0.02, y: -0.60 },
-    duration = 900, forceAxis = "x", shrink = 0.55,
-  } = opts;
+    startFrac = 0.0,            // od 0..1 od początku najdłuższej osi
+    regionFrac = 0.14,          // wielkość regionu wzdłuż osi (0.01..1)
+    padding = 1.04,             // zapas kadrowania
+    leftBiasN = -0.30,          // przesunięcie ekranu X
+    raiseN = -0.06,             // przesunięcie ekranu Y
+    screenShift = { x: -0.02, y: -0.60 },
+    duration = 900,
+    forceAxis = "x",            // "x" | "y" | "z" | "auto"
+    shrink = 0.55,              // zwężenie w pozostałych osiach
+  } = opts || {};
 
-  const { cameraRef, controlsRef, modelRef } = resolveRefs(opts);
-  const camera = cameraRef?.current, controls = controlsRef?.current, model = modelRef?.current;
-  if (!camera || !controls || !model) { console.warn("[actions] refs not ready (stage1)"); return; }
+  runWhenReady(({ camera, controls, model }) => {
+    // AABB modelu
+    const box  = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
 
-  const box = new THREE.Box3().setFromObject(model);
-  const size = box.getSize(new THREE.Vector3());
-
-  let axis = "x", axisSize = size.x;
-  if (forceAxis === "y") { axis = "y"; axisSize = size.y; }
-  else if (forceAxis === "z") { axis = "z"; axisSize = size.z; }
-  else { if (size.y > axisSize) { axis = "y"; axisSize = size.y; } if (size.z > axisSize) { axis = "z"; axisSize = size.z; } }
-
-  const segStart = box.min[axis] + THREE.MathUtils.clamp(startFrac, 0, 1) * axisSize;
-  const segLen   = THREE.MathUtils.clamp(regionFrac, 0.01, 1) * axisSize;
-  const segEnd   = Math.max(segStart, Math.min(box.max[axis], segStart + segLen));
-
-  const rMin = box.min.clone(), rMax = box.max.clone();
-  rMin[axis] = segStart; rMax[axis] = segEnd;
-
-  ["x","y","z"].forEach(k => {
-    if (k !== axis) {
-      const c = (box.min[k] + box.max[k]) * 0.5;
-      const half = (box.max[k] - box.min[k]) * 0.5 * shrink;
-      rMin[k] = c - half; rMax[k] = c + half;
+    // wybór osi (wymuszona lub najdłuższa)
+    let axis = "x", axisSize = size.x;
+    if (forceAxis === "y") { axis = "y"; axisSize = size.y; }
+    else if (forceAxis === "z") { axis = "z"; axisSize = size.z; }
+    else {
+      if (size.y > axisSize) { axis = "y"; axisSize = size.y; }
+      if (size.z > axisSize) { axis = "z"; axisSize = size.z; }
     }
+
+    // odcinek wzdłuż osi
+    const s = THREE.MathUtils.clamp(startFrac, 0, 1);
+    const rf = THREE.MathUtils.clamp(regionFrac, 0.01, 1);
+    const segStart = box.min[axis] + s * axisSize;
+    const segEnd   = Math.min(box.max[axis], Math.max(segStart + 1e-6, segStart + rf * axisSize));
+
+    // region ograniczony: zwęż go w pozostałych osiach
+    const rMin = box.min.clone();
+    const rMax = box.max.clone();
+    rMin[axis] = segStart; rMax[axis] = segEnd;
+
+    for (const k of ["x","y","z"]) {
+      if (k !== axis) {
+        const c    = (box.min[k] + box.max[k]) * 0.5;
+        const half = ((box.max[k] - box.min[k]) * 0.5) * shrink;
+        rMin[k] = c - half; rMax[k] = c + half;
+      }
+    }
+
+    const regionBox  = new THREE.Box3(rMin, rMax);
+    const regionSize = regionBox.getSize(new THREE.Vector3());
+    const regionCtr  = regionBox.getCenter(new THREE.Vector3());
+
+    // odległość kamery, by region się mieścił
+    const distance = (function fitDistanceForSize(cam, sz, pad=1.15) {
+      const maxSize = Math.max(sz.x, sz.y, sz.z);
+      const fitH = maxSize / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2));
+      const fitW = fitH / cam.aspect;
+      return pad * Math.max(fitH, fitW);
+    })(camera, regionSize, padding);
+
+    // przesunięcie w screen-space
+    const viewDir   = new THREE.Vector3(); camera.getWorldDirection(viewDir).normalize();
+    const viewUp    = camera.up.clone().normalize();
+    const viewRight = new THREE.Vector3().crossVectors(viewDir, viewUp).normalize();
+
+    const shiftX = (screenShift && screenShift.x !== undefined) ? screenShift.x : leftBiasN;
+    const shiftY = (screenShift && screenShift.y !== undefined) ? screenShift.y : raiseN;
+
+    const target = regionCtr.clone()
+      .add(viewRight.multiplyScalar(shiftX * regionSize.x))
+      .add(viewUp   .multiplyScalar(shiftY * regionSize.y));
+
+    // płynny dolot kamery bez ruszania widocznością modelu
+    animateCameraTo({ camera, controls, newTarget: target, newDistance: distance, duration });
+    console.log("[actions] stage1");
   });
-
-  const regionBox = new THREE.Box3(rMin, rMax);
-  const regionSize = regionBox.getSize(new THREE.Vector3());
-  const regionCtr  = regionBox.getCenter(new THREE.Vector3());
-
-  const distance = fitDistanceForSize(camera, regionSize, padding);
-
-  const viewDir = new THREE.Vector3(); camera.getWorldDirection(viewDir).normalize();
-  const viewUp  = camera.up.clone().normalize();
-  const viewRight = new THREE.Vector3().crossVectors(viewDir, viewUp).normalize();
-
-  const shiftX = (screenShift?.x !== undefined ? screenShift.x : leftBiasN);
-  const shiftY = (screenShift?.y !== undefined ? screenShift.y : raiseN);
-
-  const target = regionCtr.clone()
-    .add(viewRight.multiplyScalar(shiftX * regionSize.x))
-    .add(viewUp.multiplyScalar(shiftY * regionSize.y));
-
-  animateCameraTo({ camera, controls, newTarget: target, newDistance: distance, duration });
-  console.log("[actions] stage1");
 }
+
 
 // ============================================================================
 // 3) Fokus: etap 2
@@ -471,36 +504,27 @@ export function clearMeasure() {
 
 // (zostawiasz swoje setMeasure / showSummary / hideSummary / clearSummary)
 
-
-
 // === REJESTRACJA WSZYSTKICH AKCJI ===
 if (typeof window !== "undefined") {
   window.Nexus ??= {};
-  const actions = (window.Nexus.actions ??= {});
-
-  Object.assign(actions, {
+  window.Nexus.actions = {
     // fokusy
     focusModelFirstStageSmooth,
     focusModelSecondStageSmooth,
     focusModelThirdStageSmooth,
     focusModelFourthStageSmooth,
     focusStage,
-
     // pomiary
-    setMeasure,
-    clearMeasure,
-    showMeasure,
-    hideMeasure,
-
+    setMeasure, showMeasure, hideMeasure, clearMeasure,
     // podsumowanie
-    showSummary,
-    hideSummary,
-    clearSummary,
-  });
+    clearSummary, showSummary, hideSummary,
+  };
 
-  if (!window.__NEXUS_ACTIONS_LOGGED__) {
-    window.__NEXUS_ACTIONS_LOGGED__ = true;
-    console.log("[Nexus] actions registered:", Object.keys(actions));
-  }
+  // NOWE: poinformuj świat (UI) i backend
+  window.dispatchEvent(new Event('nexus:actions:ready'));
+  window.Nexus?.send?.('ActionsReady');
+
+  console.log("[Nexus] actions registered:", Object.keys(window.Nexus.actions));
 }
+
 
