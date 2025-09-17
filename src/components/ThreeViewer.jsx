@@ -8,15 +8,15 @@ import {
   createControls,
   disposeObject,
   loadGltfFromFile,
-  loadGltfFromUrl,
+  // loadGltfFromUrl,
 } from "./threeUtils";
 import { setViewRight } from "./viewOps";
 import {
   loadFromProjectAndRotateX,
-  focusModelFirstStageSmooth,
-  focusModelSecondStageSmooth,
-  focusModelThirdStageSmooth,
-  focusModelFourthStageSmooth,  // lub przejscieDoNastepnegoEtapu
+  // focusModelFirstStageSmooth,
+  // focusModelSecondStageSmooth,
+  // focusModelThirdStageSmooth,
+  // focusModelFourthStageSmooth,  // lub przejscieDoNastepnegoEtapu
 } from "./actions";
 
 export default function ThreeViewer() {
@@ -34,9 +34,16 @@ export default function ThreeViewer() {
   const axesCameraRef = useRef(null);
 
   const [, setLoading] = useState(false);
-
   // ---- Inicjalizacja bazowa + overlay osi ----
   useEffect(() => {
+
+  window.Nexus ??= {};
+  window.Nexus.refs = { sceneRef, cameraRef, controlsRef, modelRef };
+  window.Nexus.ready = true;
+  window.Nexus.send?.('ThreeReady'); // opcjonalnie: ACK do C#
+  
+
+    
     const mount = mountRef.current;
     if (!mount) return;
 
@@ -106,7 +113,7 @@ export default function ThreeViewer() {
           cameraRef,
           controlsRef,
           modelRef,
-          projectRelUrl: "../model/gltf/24388549_asm.gltf",
+          projectRelUrl: "../model/gltf/24388549.gltf",
           onLoading: setLoading,
         });
       });
@@ -134,43 +141,43 @@ export default function ThreeViewer() {
     };
   }, []);
 
-  // ---- Wczytywanie z projektu: widok RIGHT (boczny) ----
-  const loadFromProject = async () => {
-    const scene = sceneRef.current;
-    if (!scene) return;
-    setLoading(true);
-    try {
-      if (modelRef.current) {
-        scene.remove(modelRef.current);
-        disposeObject(modelRef.current);
-        modelRef.current = null;
-      }
-      const modelUrl = new URL("../model/gltf/24388549_asm.gltf", import.meta.url).href;
-      const root = await loadGltfFromUrl(modelUrl);
-      modelRef.current = root;
-      scene.add(root);
+  // // ---- Wczytywanie z projektu: widok RIGHT (boczny) ----
+  // const loadFromProject = async () => {
+  //   const scene = sceneRef.current;
+  //   if (!scene) return;
+  //   setLoading(true);
+  //   try {
+  //     if (modelRef.current) {
+  //       scene.remove(modelRef.current);
+  //       disposeObject(modelRef.current);
+  //       modelRef.current = null;
+  //     }
+  //     const modelUrl = new URL("../model/gltf/24388549.gltf", import.meta.url).href;
+  //     const root = await loadGltfFromUrl(modelUrl);
+  //     modelRef.current = root;
+  //     scene.add(root);
 
-      setViewRight(cameraRef.current, controlsRef.current, root);
-    } catch (err) {
-      console.error(err);
-      alert("Nie udało się wczytać modelu: " + (err?.message || err));
-    } finally {
-      setLoading(false);
-    }
-  };
+  //     setViewRight(cameraRef.current, controlsRef.current, root);
+  //   } catch (err) {
+  //     console.error(err);
+  //     alert("Nie udało się wczytać modelu: " + (err?.message || err));
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
 
-  // ---- Wczytywanie pliku (.glb polecany) ----
-  const onPickFile = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (/\.gltf$/i.test(file.name)) {
-      alert('Ten .gltf zwykle wymaga .bin/tekstur. Użyj "Załaduj z projektu" lub wrzuć .glb.');
-      e.target.value = "";
-      return;
-    }
-    await loadModel(file);
-    e.target.value = "";
-  };
+  // // ---- Wczytywanie pliku (.glb polecany) ----
+  // const onPickFile = async (e) => {
+  //   const file = e.target.files?.[0];
+  //   if (!file) return;
+  //   if (/\.gltf$/i.test(file.name)) {
+  //     alert('Ten .gltf zwykle wymaga .bin/tekstur. Użyj "Załaduj z projektu" lub wrzuć .glb.');
+  //     e.target.value = "";
+  //     return;
+  //   }
+  //   await loadModel(file);
+  //   e.target.value = "";
+  // };
 
   async function loadModel(file) {
     const scene = sceneRef.current;
@@ -226,8 +233,8 @@ export default function ThreeViewer() {
 
   return (
     <div style={{ display: "grid", gridTemplateRows: "auto 1fr", gap: 8, height: "100vh" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, background: "#0f172a", color: "#e2e8f0" }}>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, color: "#e2e8f0" }}>
+        {/* <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
           <input type="file" accept=".glb,.gltf" onChange={onPickFile} style={{ display: "none" }} />
           <span style={{ padding: "6px 12px", background: "#2563eb", borderRadius: 8 }}>
             Wczytaj model (.glb/.gltf)
@@ -240,7 +247,7 @@ export default function ThreeViewer() {
         <button
         onClick={() => loadFromProjectAndRotateX({
             sceneRef, cameraRef, controlsRef, modelRef,
-            projectRelUrl: "../model/gltf/24388549_asm.gltf",
+            projectRelUrl: "../model/gltf/24388549.gltf",
             onLoading: setLoading,
         })}
         style={{ padding: "6px 12px", background: "#334155", borderRadius: 8, color: "#e2e8f0" }}
@@ -271,7 +278,7 @@ export default function ThreeViewer() {
             style={{ padding:"6px 12px", background:"#334155", borderRadius:8, color:"#e2e8f0" }}
             >
             Fokus: etap 4 (obrót + zoom)
-            </button>
+            </button> */}
       </div>
 
       <div ref={mountRef} style={{ position: "relative", width: "100%", height: "100%" }} />
