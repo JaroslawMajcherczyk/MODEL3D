@@ -306,53 +306,92 @@ export function focusModelThirdStageSmooth(opts = {}) {
   const camera = cameraRef?.current, controls = controlsRef?.current, model = modelRef?.current;
   if (!camera || !controls || !model) { console.warn("[actions] refs not ready (stage3)"); return; }
 
-  const box = new THREE.Box3().setFromObject(model);
-  const size = box.getSize(new THREE.Vector3());
+  const nav = ensureNav();
 
-  let axis = "x", axisSize = size.x;
-  if (forceAxis === "y") { axis = "y"; axisSize = size.y; }
-  else if (forceAxis === "z") { axis = "z"; axisSize = size.z; }
-  else { if (size.y > axisSize) { axis = "y"; axisSize = size.y; } if (size.z > axisSize) { axis = "z"; axisSize = size.z; } }
+  // Jeśli wracamy z 4 → 3 i mamy zarejestrowaną trasę 3→4 — odtwórzmy ją wstecz.
+  if (nav.prevStage === 4 && nav.t43) {
+    const t = nav.t43; // snapshot trasy
+    (async () => {
+      try {
+        // 1) micro-dolot wstecz: finalTarget -> regionCtr (używamy postMs)
+        await dollyTo(camera, controls, t.regionCtr, t.distance, t.postMs);
 
-  const frac = THREE.MathUtils.clamp(fraction, 0, 1);
-  const segHalf = 0.5 * THREE.MathUtils.clamp(regionFrac, 0.01, 1) * axisSize;
-  const segCtr  = box.min[axis] + frac * axisSize;
+        // 2) orbita w przeciwną stronę (ten sam kąt/czas/keys)
+        const keys = [
+          { t: 0, d: t.distance },
+          { t: Math.max(0.05, Math.min(0.95, t.midAt)), d: t.distance * t.midZoom },
+          { t: 1, d: t.distance }
+        ];
+        await orbitCameraAroundTarget({
+          camera, controls, target: t.regionCtr,
+          axis: camera.up, totalAngle: THREE.MathUtils.degToRad(t.orbitAngleDeg) * (-t.dirSign),
+          duration: t.orbitMs, distanceKeys: keys,
+        });
 
-  const rMin = box.min.clone(), rMax = box.max.clone();
-  rMin[axis] = Math.max(box.min[axis], segCtr - segHalf);
-  rMax[axis] = Math.min(box.max[axis], segCtr + segHalf);
-
-  ["x","y","z"].forEach(k => {
-    if (k !== axis) {
-      const c = (box.min[k] + box.max[k]) * 0.5;
-      const half = (box.max[k] - box.min[k]) * 0.5 * shrink;
-      rMin[k] = c - half; rMax[k] = c + half;
-    }
-  });
-
-  const regionBox = new THREE.Box3(rMin, rMax);
-  const regionSize = regionBox.getSize(new THREE.Vector3());
-  const regionCtr  = regionBox.getCenter(new THREE.Vector3());
-
-  const viewDir = new THREE.Vector3(); camera.getWorldDirection(viewDir).normalize();
-  const viewUp  = camera.up.clone().normalize();
-  const viewRight = new THREE.Vector3().crossVectors(viewDir, viewUp).normalize();
-
-  const target = regionCtr.clone();
-  target[axis] += align * segHalf;
-  target.add(new THREE.Vector3(
-    (offsetN.x || 0) * size.x,
-    (offsetN.y || 0) * size.y,
-    (offsetN.z || 0) * size.z
-  ));
-  if (screenShift) {
-    target.add(viewRight.multiplyScalar((screenShift.x || 0) * regionSize.x));
-    target.add(viewUp   .multiplyScalar((screenShift.y || 0) * regionSize.y));
+        // 3) micro-dolot wstecz: regionCtr -> pozycja ze stage 3 (używamy preMs)
+        await dollyTo(camera, controls, t.fromPose.target, t.fromPose.distance, t.preMs);
+      } catch (e) {
+        console.warn("[actions] stage3 reverse failed, falling back to normal stage3", e);
+        // jeśli coś pójdzie nie tak — wykonaj normalny stage3
+        normalStage3();
+      }
+    })();
+    console.log("[actions] stage3 (reverse from 4)");
+    return;
   }
 
-  const distance = fitDistanceForSize(camera, regionSize, padding);
-  animateCameraTo({ camera, controls, newTarget: target, newDistance: distance, duration });
-  console.log("[actions] stage3");
+  // Normalny stage 3 (gdy przychodzimy z 2 → 3, albo brak snapshota)
+  normalStage3();
+
+  function normalStage3() {
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+
+    let axis = "x", axisSize = size.x;
+    if (forceAxis === "y") { axis = "y"; axisSize = size.y; }
+    else if (forceAxis === "z") { axis = "z"; axisSize = size.z; }
+    else { if (size.y > axisSize) { axis = "y"; axisSize = size.y; } if (size.z > axisSize) { axis = "z"; axisSize = size.z; } }
+
+    const frac = THREE.MathUtils.clamp(fraction, 0, 1);
+    const segHalf = 0.5 * THREE.MathUtils.clamp(regionFrac, 0.01, 1) * axisSize;
+    const segCtr  = box.min[axis] + frac * axisSize;
+
+    const rMin = box.min.clone(), rMax = box.max.clone();
+    rMin[axis] = Math.max(box.min[axis], segCtr - segHalf);
+    rMax[axis] = Math.min(box.max[axis], segCtr + segHalf);
+
+    ["x","y","z"].forEach(k => {
+      if (k !== axis) {
+        const c = (box.min[k] + box.max[k]) * 0.5;
+        const half = (box.max[k] - box.min[k]) * 0.5 * shrink;
+        rMin[k] = c - half; rMax[k] = c + half;
+      }
+    });
+
+    const regionBox = new THREE.Box3(rMin, rMax);
+    const regionSize = regionBox.getSize(new THREE.Vector3());
+    const regionCtr  = regionBox.getCenter(new THREE.Vector3());
+
+    const viewDir = new THREE.Vector3(); camera.getWorldDirection(viewDir).normalize();
+    const viewUp  = camera.up.clone().normalize();
+    const viewRight = new THREE.Vector3().crossVectors(viewDir, viewUp).normalize();
+
+    const target = regionCtr.clone();
+    target[axis] += align * segHalf;
+    target.add(new THREE.Vector3(
+      (offsetN.x || 0) * size.x,
+      (offsetN.y || 0) * size.y,
+      (offsetN.z || 0) * size.z
+    ));
+    if (screenShift) {
+      target.add(viewRight.multiplyScalar((screenShift.x || 0) * regionSize.x));
+      target.add(viewUp   .multiplyScalar((screenShift.y || 0) * regionSize.y));
+    }
+
+    const distance = fitDistanceForSize(camera, regionSize, padding);
+    animateCameraTo({ camera, controls, newTarget: target, newDistance: distance, duration });
+    console.log("[actions] stage3");
+  }
 }
 
 // ============================================================================
@@ -397,8 +436,11 @@ export async function focusModelFourthStageSmooth(opts = {}) {
   const regionSize = regionBox.getSize(new THREE.Vector3());
   const regionCtr  = regionBox.getCenter(new THREE.Vector3());
 
+  // ZAPISZ POZYCJĘ PRZED STAGE 4 (to jest "pose ze stage 3")
+  const fromPose = capturePose(camera, controls);
+
   const distance = fitDistanceForSize(camera, regionSize, padding);
-  await animateCameraTo({ camera, controls, newTarget: regionCtr, newDistance: distance, duration: preMs });
+  await dollyTo(camera, controls, regionCtr, distance, preMs);
 
   let dirSign = 1;
   if (orbitDir === "cw") dirSign = -1;
@@ -406,9 +448,9 @@ export async function focusModelFourthStageSmooth(opts = {}) {
   else { const rel = camera.position.clone().sub(regionCtr); dirSign = (rel.x >= 0 ? 1 : -1); }
 
   const keys = [
-    { t: 0,                                   d: distance },
+    { t: 0, d: distance },
     { t: Math.max(0.05, Math.min(0.95, midAt)), d: distance * midZoom },
-    { t: 1,                                   d: distance }
+    { t: 1, d: distance }
   ];
 
   await orbitCameraAroundTarget({
@@ -426,35 +468,56 @@ export async function focusModelFourthStageSmooth(opts = {}) {
   finalTarget.add(viewRight.multiplyScalar((finalScreenShift.x || 0) * regionSize.x));
   finalTarget.add(viewUp   .multiplyScalar((finalScreenShift.y || 0) * regionSize.y));
 
-  await animateCameraTo({ camera, controls, newTarget: finalTarget, newDistance: distance, duration: postMs });
+  await dollyTo(camera, controls, finalTarget, distance, postMs);
+
+  // Zapis trasy do reverse (4 → 3)
+  const nav = ensureNav();
+  nav.t43 = {
+    fromPose,               // gdzie wrócić na końcu
+    regionCtr,              // środek orbity
+    distance,               // dystans użyty przy dolotach/orbicie
+    dirSign,                // kierunek orbity przy 3→4
+    orbitAngleDeg, orbitMs, midAt, midZoom,
+    preMs, postMs,          // czasy mikro-dolotów
+    axis, segHalf, finalScreenShift, finalAlign, // kosmetyka (niekonieczne, ale niech będzie)
+  };
+
   console.log("[actions] stage4");
 }
+
 
 // ============================================================================
 // Dodatkowe akcje / aliasy
 // ============================================================================
-export function focusStage(n, opts = {}) {
-  if (n === 1) return focusModelFirstStageSmooth(opts);
-  if (n === 2) return focusModelSecondStageSmooth(opts);
-  if (n === 3) return focusModelThirdStageSmooth(opts);
-  if (n === 4) return focusModelFourthStageSmooth(opts);
-  console.warn("[actions] focusStage: unknown stage", n);
+let currentFocusTween = null;
+
+export async function focusStage(n, opts = {}) {
+  const nav = ensureNav();
+  nav.prevStage = nav.currStage;
+  nav.currStage = n;
+
+  if (currentFocusTween) { currentFocusTween.kill?.(); currentFocusTween = null; }
+  if (n === 1) currentFocusTween = focusModelFirstStageSmooth(opts);
+  if (n === 2) currentFocusTween = focusModelSecondStageSmooth(opts);
+  if (n === 3) currentFocusTween = focusModelThirdStageSmooth(opts);
+  if (n === 4) currentFocusTween = focusModelFourthStageSmooth(opts);
+  console.log("[focusStage]", n)
 }
 
 
 // ============================================================================
 // Rejestr globalny (dla C#)
 // ============================================================================
-// --- helper: historia 4 pomiarów ---
+// 2) Historia pomiarów – odporna na undefined
 function pushMeasureToHistory(item) {
-  window.Nexus ??= {};
-  const store = (window.Nexus.summary ??= { items: [] });
-  store.items.push(item);
-  if (store.items.length > 4) store.items.shift();
-  window.dispatchEvent(new CustomEvent("nexus:summary:update", { detail: store.items }));
+  const s = ensureSummaryStore();
+  s.items.push(item);
+  // utrzymujmy np. max 20 wpisów (jak chcesz)
+  if (s.items.length > 20) s.items.shift();
+  window.dispatchEvent(new CustomEvent("nexus:summary:update", { detail: s.slots.slice() }));
 }
 
-// --- akcje wywoływane z C# (SignalR) ---
+// 3) setMeasure – używaj ensureSummaryStore ZAWSZE
 export function setMeasure(value, unit = "mm", min = null, max = null, stage = null) {
   const v = typeof value === "number" ? value : Number(String(value).replace(",", "."));
   const m = min == null ? null : Number(min);
@@ -462,12 +525,24 @@ export function setMeasure(value, unit = "mm", min = null, max = null, stage = n
 
   window.Nexus ??= {};
   window.Nexus.lastMeasure = { value: v, unit, min: m, max: M, stage, ts: Date.now() };
+
+  // (a) publikacja eventu live
   window.dispatchEvent(new CustomEvent("nexus:measure", {
     detail: { value: v, unit, min: m, max: M, stage }
   }));
 
-  // do paska podsumowania
+  // (b) aktualizacja slotów 1..4
+  const s = ensureSummaryStore();
+  if (Number.isInteger(stage) && stage >= 1 && stage <= 4) {
+    s.slots[stage - 1] = { value: v, unit, min: m, max: M, stage, ts: Date.now() };
+    window.dispatchEvent(new CustomEvent("nexus:summary:update", { detail: s.slots.slice() }));
+  }
+
+  // (c) historia (odporna)
   pushMeasureToHistory({ value: v, unit, min: m, max: M, stage, ts: Date.now() });
+
+  // (d) debug
+  console.log("[setMeasure]", { stage, value: v });
 }
 
 export function showSummary() {
@@ -502,29 +577,73 @@ export function clearMeasure() {
   window.dispatchEvent(new Event("nexus:measure:clear"));
 }
 
-// (zostawiasz swoje setMeasure / showSummary / hideSummary / clearSummary)
+
+function fireSummaryUpdate() {
+  const s = ensureSummaryStore();
+  window.dispatchEvent(new CustomEvent("nexus:summary:update", { detail: s.slots.slice() }));
+}
+// 1) Solidna inicjalizacja store
+function ensureSummaryStore() {
+  window.Nexus ??= {};
+  const s = (window.Nexus.summary ??= { slots: [null, null, null, null], items: [], visible: false });
+  // sanity checks
+  if (!Array.isArray(s.slots) || s.slots.length !== 4) s.slots = [null, null, null, null];
+  if (!Array.isArray(s.items)) s.items = [];
+  return s;
+}
+export function markMeasureInvalid() {
+  window.dispatchEvent(new Event("nexus:measure:invalid"));
+}
+export function clearSummarySlot(index) {
+  const s = ensureSummaryStore();
+  if (index >= 0 && index < 4) s.slots[index] = null;
+  window.dispatchEvent(new CustomEvent("nexus:summary:update", { detail: s.slots.slice() }));
+}
+export function markBack() {
+  window.dispatchEvent(new Event('nexus:back'));
+}
+// --- NAV STATE + helpers ---
+function ensureNav() {
+  window.Nexus ??= {};
+  const nav = (window.Nexus.nav ??= {
+    currStage: null,
+    prevStage: null,
+    t43: null,          // zapis trasy 3→4 do odtworzenia 4→3
+  });
+  return nav;
+}
+
+function capturePose(camera, controls) {
+  const pos = camera.position.clone();
+  const target = controls.target.clone();
+  const up = camera.up.clone();
+  const distance = pos.distanceTo(target);
+  return { pos, target, up, distance };
+}
+
+// ujednolicenie: anim dolotu do targetu na konkretną odległość
+async function dollyTo(camera, controls, target, distance, duration) {
+  await animateCameraTo({ camera, controls, newTarget: target.clone(), newDistance: distance, duration });
+}
+
 
 // === REJESTRACJA WSZYSTKICH AKCJI ===
+// Upewnij się, że rejestr akcje eksportuje ensureSummaryStore pośrednio:
 if (typeof window !== "undefined") {
   window.Nexus ??= {};
   window.Nexus.actions = {
-    // fokusy
     focusModelFirstStageSmooth,
     focusModelSecondStageSmooth,
     focusModelThirdStageSmooth,
     focusModelFourthStageSmooth,
     focusStage,
-    // pomiary
-    setMeasure, showMeasure, hideMeasure, clearMeasure,
-    // podsumowanie
-    clearSummary, showSummary, hideSummary,
+    setMeasure, showMeasure, hideMeasure, clearMeasure,fireSummaryUpdate,
+    clearSummary, showSummary, hideSummary, clearSummarySlot,
+    // (opcjonalnie) markBack
   };
 
-  // NOWE: poinformuj świat (UI) i backend
   window.dispatchEvent(new Event('nexus:actions:ready'));
   window.Nexus?.send?.('ActionsReady');
-
   console.log("[Nexus] actions registered:", Object.keys(window.Nexus.actions));
 }
-
 

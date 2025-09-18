@@ -19,12 +19,16 @@ import { HubConnectionBuilder, LogLevel, HttpTransportType  } from '@microsoft/s
       console.log('[Nexus] READY announced to C#');
     }
   }
+// kiedy actions się zarejestrują (actions.jsx wyemituje event), doślij do C#
+window.addEventListener('nexus:actions:ready', () => {
+  announceActionsReadyIfPossible();
+});
 
   // viewer -> gotowy
   window.addEventListener('nexus:viewer:ready', () => {
     ready.viewer = true;
     console.log('[Nexus] viewer ready');
-    // wyślij do C# tak, by Kestrel mógł zwolnić WaitFrontendReadyAsync
+    // wyślij do C# tak, by Kestrel mógł zwolnić WaitFrontendReadyAsynca
     window.Nexus.send?.('ThreeReady');
     maybeAnnounceReady();
   });
@@ -55,20 +59,29 @@ import { HubConnectionBuilder, LogLevel, HttpTransportType  } from '@microsoft/s
     .build();
 
   // C# -> React
-  conn.on('call', ({ name, args }) => {
-    const fn = window?.Nexus?.actions?.[name];
-    if (typeof fn === 'function') {
-      try { fn(...(args ?? [])); } catch (e) { console.warn('[SignalR] action error', e); }
-    } else {
-      console.warn('[SignalR] missing action:', name, 'available:', Object.keys(window?.Nexus?.actions || {}));
-    }
-  });
+ conn.on('call', ({ name, args }) => {
+  console.log('[CALL]', name, args);   // <— DODAJ
+  const fn = window?.Nexus?.actions?.[name];
+  if (typeof fn === 'function') {
+    try { fn(...(args ?? [])); } catch (e) { console.warn('[SignalR] action error', e); }
+  } else {
+    console.warn('[SignalR] missing action:', name, 'available:', Object.keys(window?.Nexus?.actions || {}));
+  }
+});
+// --- nad setup() lub na początku setup():
+function announceActionsReadyIfPossible() {
+  if (window.Nexus?.actions && window.Nexus?.send) {
+    try { window.Nexus.send('ActionsReady'); } catch {/** */}
+  }
+}
 
   // React -> C#
   function bindClientSend() {
     window.Nexus ??= {};
-    window.Nexus.send = (evt, payload) => conn.invoke('FromClient', evt, payload);
-  }
+window.Nexus.send = async (evt, payload) => {
+  try { await conn.invoke('FromClient', evt, payload); }
+  catch (e) { console.warn('[SignalR] FromClient failed', evt, e); }
+};  }
 
   async function startWithRetry(delayMs = 800) {
     try {
@@ -78,7 +91,8 @@ import { HubConnectionBuilder, LogLevel, HttpTransportType  } from '@microsoft/s
       console.log('[SignalR] connected', url);
 
       ready.signalr = true;
-
+      // JEŚLI actions gotowe wcześniej, doślij teraz:
+      announceActionsReadyIfPossible();
       // jeśli viewer/model były gotowe zanim SignalR wystartował – doślij sygnały teraz
       if (ready.viewer) window.Nexus.send?.('ThreeReady');
       if (ready.model)  window.Nexus.send?.('ModelReady');
