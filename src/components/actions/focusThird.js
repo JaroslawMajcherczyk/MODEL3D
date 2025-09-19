@@ -1,27 +1,33 @@
+// src/components/actions/focusThird.js
 import * as THREE from "three";
 import {
   resolveRefs, ensureNav, animateCameraTo,
   orbitCameraAroundTarget, dollyTo
 } from "./core";
+import { getCameraStageOpts } from "../../config/focusProfilesCamera";
+import { getArrowStageOpts }  from "../../config/focusProfilesArrow";
 
 export function focusModelThirdStageSmooth(opts = {}) {
-  const {
-    // --- wybór wycinka / kamera ---
-    fraction = 0.82, regionFrac = 0.20, padding = 1.06, duration = 1100,
-    align = 0.0, forceAxis = "x", shrink = 0.85,
-    offsetN = { x: 0, y: 0, z: 0 }, screenShift = { x: 0.22, y: -0.28 },
-
-    // --- HUD strzałka/napis ---
-    hudText = "Zmierz szerokość trzeciego zacisku",
-    hudArrowSize = 130,
-    hudLabelFontSize = 24,
-    hudLabelSide = "bottom",
-    hudGapPx = 14,
-    hudOffsetPx = { x: 140, y: 220 },
-  } = opts;
-
   // schowaj HUD z poprzedniego etapu
   window.dispatchEvent(new Event("nexus:arrowhud:hide"));
+  window.dispatchEvent(new Event("nexus:stage:third"));
+
+  // wybór profilu wg aktywnego modelu
+  const modelKey = window.Nexus?.modelKey || "default";
+  const cam = getCameraStageOpts(3, modelKey, opts);     // profil kamery (z nadpisaniami z opts)
+  const hud = getArrowStageOpts (3, modelKey, opts.hud); // profil HUD (z nadpisaniami z opts.hud)
+
+  const {
+    fraction   = 0.82,
+    regionFrac = 0.20,
+    padding    = 1.06,
+    duration   = 1100,
+    align      = 0.0,
+    forceAxis  = "x",
+    shrink     = 0.85,
+    offsetN    = { x: 0, y: 0, z: 0 },
+    screenShift = { x: 0.22, y: -0.28 },
+  } = cam;
 
   const { cameraRef, controlsRef, modelRef } = resolveRefs(opts);
   const camera = cameraRef?.current, controls = controlsRef?.current, model = modelRef?.current;
@@ -37,6 +43,7 @@ export function focusModelThirdStageSmooth(opts = {}) {
     const box = new THREE.Box3().setFromObject(model);
     const size = box.getSize(new THREE.Vector3());
 
+    // dominująca oś
     let axis = "x", axisSize = size.x;
     if (forceAxis === "y") { axis = "y"; axisSize = size.y; }
     else if (forceAxis === "z") { axis = "z"; axisSize = size.z; }
@@ -53,7 +60,7 @@ export function focusModelThirdStageSmooth(opts = {}) {
     ["x","y","z"].forEach(k => {
       if (k !== axis) {
         const c = (box.min[k] + box.max[k]) * 0.5;
-        const half = (box.max[k] - box.min[k]) * 0.5 * shrink;
+        const half = (box.max[k] - box.min[k]) * 0.5 * (shrink ?? 0.85);
         rMin[k] = c - half; rMax[k] = c + half;
       }
     });
@@ -68,11 +75,11 @@ export function focusModelThirdStageSmooth(opts = {}) {
       const viewRight = new THREE.Vector3().crossVectors(viewDir, viewUp).normalize();
 
       const target = regionCtr.clone();
-      target[axis] += align * segHalf;
+      target[axis] += (align ?? 0) * segHalf;
       target.add(new THREE.Vector3(
-        (offsetN.x || 0) * size.x,
-        (offsetN.y || 0) * size.y,
-        (offsetN.z || 0) * size.z
+        (offsetN?.x || 0) * size.x,
+        (offsetN?.y || 0) * size.y,
+        (offsetN?.z || 0) * size.z
       ));
       if (screenShift) {
         target.add(viewRight.multiplyScalar((screenShift.x || 0) * regionSize.x));
@@ -82,12 +89,12 @@ export function focusModelThirdStageSmooth(opts = {}) {
       const max = Math.max(regionSize.x, regionSize.y, regionSize.z);
       const fitH = max / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
       const fitW = fitH / camera.aspect;
-      const distance = padding * Math.max(fitH, fitW);
+      const distance = (padding ?? 1.06) * Math.max(fitH, fitW);
 
-      animateCameraTo({ camera, controls, newTarget: target, newDistance: distance, duration });
+      animateCameraTo({ camera, controls, newTarget: target, newDistance: distance, duration: (duration ?? 1100) });
     }
 
-    return { regionBox, regionSize, regionCtr };
+    return { regionBox, regionSize, regionCtr, axis };
   }
 
   // helper: pokaż HUD strzałkę dla regionu (bez zmiany kamery)
@@ -101,12 +108,12 @@ export function focusModelThirdStageSmooth(opts = {}) {
       detail: {
         mode: "world",
         world: { x: tip.x, y: tip.y, z: tip.z },
-        text: hudText,
-        arrowSize: hudArrowSize,
-        labelFontSize: hudLabelFontSize,
-        labelSide: hudLabelSide,
-        gapPx: hudGapPx,
-        offsetPx: hudOffsetPx,
+        text: (hud?.text ?? "Zmierz szerokość trzeciego zacisku"),
+        arrowSize: (hud?.arrowSize ?? 130),
+        labelFontSize: (hud?.labelFontSize ?? 24),
+        labelSide: (hud?.labelSide ?? "bottom"),
+        gapPx: (hud?.gapPx ?? 14),
+        offsetPx: (hud?.offsetPx ?? { x: 140, y: 220 }),
       }
     }));
   }
@@ -141,12 +148,12 @@ export function focusModelThirdStageSmooth(opts = {}) {
         showHud(regionSize, regionCtr);
       }
     })();
-    console.log("[actions] stage3 (reverse from 4)");
+    console.log(`[actions] stage3 (reverse from 4, modelKey=${modelKey})`);
     return;
   }
 
   // normalny etap 3
   const { regionSize, regionCtr } = computeRegionAndMaybeFly(true);
   showHud(regionSize, regionCtr);
-  console.log("[actions] stage3 + HUD");
+  console.log(`[actions] stage3 + HUD (modelKey=${modelKey})`);
 }

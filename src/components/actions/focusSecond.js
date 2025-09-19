@@ -1,32 +1,18 @@
 // src/components/actions/focusSecond.js
 import * as THREE from "three";
 import { resolveRefs, fitDistanceForSize, animateCameraTo } from "./core";
+import { getCameraStageOpts } from "../../config/focusProfilesCamera";
+import { getArrowStageOpts }  from "../../config/focusProfilesArrow";
 
 export function focusModelSecondStageSmooth(opts = {}) {
-  const {
-    // --- wybór wycinka ---
-    fraction = 0.72,
-    regionFrac = 0.18,
-    forceAxis = "x",
-    shrink = 0.90,
-
-    // --- dolot kamery ---
-    padding = 1.06,
-    duration = 1100,
-    align = -0.10,
-    offsetN = { x: 0, y: 0.06, z: 0 },
-
-    // --- HUD strzałka/napis (możesz nadpisywać przy wywołaniu) ---
-    hudText = "Zmierz szerokość drugiego zacisku",
-    hudArrowSize = 130,
-    hudLabelFontSize = 24,
-    hudLabelSide = "bottom",         // "bottom" = napis POD strzałką
-    hudGapPx = 14,
-    hudOffsetPx = { x: -20, y: -600 }, // +y = niżej na ekranie, +x = w prawo
-  } = opts;
-
-  // najpierw schowaj ewentualną strzałkę z poprzedniego etapu
+  // schowaj ewentualną strzałkę z poprzedniego etapu
   window.dispatchEvent(new Event("nexus:arrowhud:hide"));
+  window.dispatchEvent(new Event("nexus:stage:second"));
+
+  // wybór profilu wg aktywnego modelu (ustawiane przy loadFromProjectAndRotateX)
+  const modelKey = window.Nexus?.modelKey || "default";
+  const cam = getCameraStageOpts(2, modelKey, opts);     // profil kamery dla Stage 2 (+ nadpisania z opts)
+  const hud = getArrowStageOpts (2, modelKey, opts.hud); // profil HUD dla Stage 2 (+ nadpisania z opts.hud)
 
   const { cameraRef, controlsRef, modelRef } = resolveRefs(opts);
   const camera   = cameraRef?.current;
@@ -41,13 +27,18 @@ export function focusModelSecondStageSmooth(opts = {}) {
   const box = new THREE.Box3().setFromObject(model);
   const size = box.getSize(new THREE.Vector3());
 
+  // dominująca oś (z możliwością wymuszenia w profilu)
   let axis = "x", axisSize = size.x;
-  if (forceAxis === "y") { axis = "y"; axisSize = size.y; }
-  else if (forceAxis === "z") { axis = "z"; axisSize = size.z; }
+  if (cam.forceAxis === "y") { axis = "y"; axisSize = size.y; }
+  else if (cam.forceAxis === "z") { axis = "z"; axisSize = size.z; }
   else {
     if (size.y > axisSize) { axis = "y"; axisSize = size.y; }
     if (size.z > axisSize) { axis = "z"; axisSize = size.z; }
   }
+
+  const fraction   = cam.fraction   ?? 0.72;
+  const regionFrac = cam.regionFrac ?? 0.18;
+  const shrink     = cam.shrink     ?? 0.90;
 
   const frac = THREE.MathUtils.clamp(fraction, 0, 1);
   const segHalf = 0.5 * THREE.MathUtils.clamp(regionFrac, 0.01, 1) * axisSize;
@@ -69,7 +60,12 @@ export function focusModelSecondStageSmooth(opts = {}) {
   const regionSize = regionBox.getSize(new THREE.Vector3());
   const regionCtr  = regionBox.getCenter(new THREE.Vector3());
 
-  // docelowy target (jak dotąd)
+  // --- dolot kamery ---
+  const padding = cam.padding ?? 1.06;
+  const duration = cam.duration ?? 1100;
+  const align = cam.align ?? -0.10;
+  const offsetN = cam.offsetN ?? { x: 0, y: 0.06, z: 0 };
+
   const target = regionCtr.clone();
   target[axis] += align * segHalf;
   target.add(new THREE.Vector3(
@@ -81,25 +77,24 @@ export function focusModelSecondStageSmooth(opts = {}) {
   const distance = fitDistanceForSize(camera, regionSize, padding);
   animateCameraTo({ camera, controls, newTarget: target, newDistance: distance, duration });
 
-  // --- pozycja HUD-a: „pod” wycinkiem (podobnie jak w etapie 1, ale możesz łatwo zmienić offsety)
+  // --- HUD: „pod” wycinkiem względem bieżącego up kamery ---
   const up = camera.up.clone().normalize();
   const bottomMid = regionCtr.clone().add(up.clone().multiplyScalar(-0.5 * regionSize.y));
   const gap = Math.max(regionSize.x, regionSize.y, regionSize.z) * 0.04;
   const tip = bottomMid.clone().add(up.clone().multiplyScalar(-gap));
 
-  // pokaż NOWĄ strzałkę HUD dla etapu 2
   window.dispatchEvent(new CustomEvent("nexus:arrowhud:show", {
     detail: {
       mode: "world",
       world: { x: tip.x, y: tip.y, z: tip.z },
-      text: hudText,
-      arrowSize: hudArrowSize,
-      labelFontSize: hudLabelFontSize,
-      labelSide: hudLabelSide,
-      gapPx: hudGapPx,
-      offsetPx: hudOffsetPx,
+      text: hud.text ?? "Zmierz szerokość drugiego zacisku",
+      arrowSize: hud.arrowSize ?? 130,
+      labelFontSize: hud.labelFontSize ?? 24,
+      labelSide: hud.labelSide ?? "bottom",
+      gapPx: hud.gapPx ?? 14,
+      offsetPx: hud.offsetPx ?? { x: -20, y: -600 },
     }
   }));
 
-  console.log("[actions] stage2 + HUD");
+  console.log(`[actions] stage2 + HUD (modelKey=${modelKey})`);
 }

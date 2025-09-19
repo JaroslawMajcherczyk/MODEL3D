@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef} from "react";
 import * as THREE from "three";
 import {
   createScene,
@@ -7,7 +7,6 @@ import {
   createControls,
   disposeObject,
 } from "./threeUtils";
-import { loadFromProjectAndRotateX } from "./modelActions.jsx";
 import {
   focusModelFirstStageSmooth,
   focusModelSecondStageSmooth,
@@ -18,7 +17,6 @@ import {
 export default function ThreeViewer() {
   const containerRef  = useRef(null);  // kontener całego viewer’a (relative)
   const mountRef      = useRef(null);  // tu wpina się renderer
-  const autoloadedRef = useRef(false);
   const rendererRef   = useRef(null);
   const sceneRef      = useRef(null);
   const cameraRef     = useRef(null);
@@ -30,7 +28,6 @@ export default function ThreeViewer() {
   const axesSceneRef  = useRef(null);
   const axesCameraRef = useRef(null);
 
-  const [, setLoading] = useState(false);
 
   // helper do wywołania etapów
   const callStage = (fn) => {
@@ -109,26 +106,6 @@ export default function ThreeViewer() {
       }
     };
     animate();
-
-    // --- AUTOSTART modelu: tylko raz (guard pod StrictMode) ---
-    if (!autoloadedRef.current) {
-      autoloadedRef.current = true;
-      requestAnimationFrame(() => {
-        loadFromProjectAndRotateX({
-          sceneRef,
-          cameraRef,
-          controlsRef,
-          modelRef,
-          projectRelUrl: "../model/gltf/1.gltf",
-          onLoading: setLoading,
-          onLoaded: () => {
-            window.dispatchEvent(new Event("nexus:model:loaded"));
-            window.Nexus?.send?.("ModelReady");
-          },
-        });
-      });
-    }
-
     // resize
     const onResize = () => {
       const w = mount.clientWidth;
