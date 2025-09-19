@@ -7,10 +7,17 @@ import {
   createControls,
   disposeObject,
 } from "./threeUtils";
-import { loadFromProjectAndRotateX } from "./actions";
+import { loadFromProjectAndRotateX } from "./modelActions.jsx";
+import {
+  focusModelFirstStageSmooth,
+  focusModelSecondStageSmooth,
+  focusModelThirdStageSmooth,
+  focusModelFourthStageSmooth,
+} from "./actions/index.js";
 
 export default function ThreeViewer() {
-  const mountRef      = useRef(null);
+  const containerRef  = useRef(null);  // kontener całego viewer’a (relative)
+  const mountRef      = useRef(null);  // tu wpina się renderer
   const autoloadedRef = useRef(false);
   const rendererRef   = useRef(null);
   const sceneRef      = useRef(null);
@@ -24,6 +31,16 @@ export default function ThreeViewer() {
   const axesCameraRef = useRef(null);
 
   const [, setLoading] = useState(false);
+
+  // helper do wywołania etapów
+  const callStage = (fn) => {
+    fn?.({
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      modelRef,
+    });
+  };
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -44,10 +61,11 @@ export default function ThreeViewer() {
 
     // zarejestruj globalne refs dla akcji (C# -> React)
     window.Nexus ??= {};
-    window.Nexus.refs = { sceneRef, cameraRef, controlsRef, modelRef };
+    window.Nexus.refs = { sceneRef, cameraRef, controlsRef, modelRef, rendererRef, mountRef  };
 
     // viewer gotowy (refs istnieją) – powiadom lokalnie
-    window.dispatchEvent(new Event('nexus:viewer:ready'));
+    window.dispatchEvent(new Event("nexus:viewer:ready"));
+
 
     // --- overlay mini-osi (osobna scena + kamera, brak tła) ---
     const axesScene  = new THREE.Scene();
@@ -101,14 +119,11 @@ export default function ThreeViewer() {
           cameraRef,
           controlsRef,
           modelRef,
-          projectRelUrl: "../model/gltf/24388549.gltf",
+          projectRelUrl: "../model/gltf/1.gltf",
           onLoading: setLoading,
           onLoaded: () => {
-            // model już w scenie:
-            // — lokalny event (dla UI)…
-            window.dispatchEvent(new Event('nexus:model:loaded'));
-            // — oraz sygnał do C# (jeśli SignalR już gotowy)
-            window.Nexus?.send?.('ModelReady');
+            window.dispatchEvent(new Event("nexus:model:loaded"));
+            window.Nexus?.send?.("ModelReady");
           },
         });
       });
@@ -138,5 +153,94 @@ export default function ThreeViewer() {
     };
   }, []);
 
-  return <div ref={mountRef} style={{ position:'absolute', inset:0 }} />;
+  // (opcjonalnie) skróty klawiaturowe 1–4
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.repeat) return;
+      switch (e.key) {
+        case "1": return callStage(focusModelFirstStageSmooth);
+        case "2": return callStage(focusModelSecondStageSmooth);
+        case "3": return callStage(focusModelThirdStageSmooth);
+        case "4": return callStage(focusModelFourthStageSmooth);
+        default: return;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  return (
+    <div
+      ref={containerRef}
+      style={{ position: "absolute", inset: 0, overflow: "hidden" }}
+    >
+      {/* Baner zadania nad sceną */}
+      {/* <TaskBannerWidget
+        topOffset={12}
+        initialVisible={true}
+        message="Zmierz wszystkie zaciski na wykonanym elemencie krok po kroku na podanej wizualizacji"
+      /> */}
+      {/* Panel przycisków nad sceną */}
+      <div
+        style={{
+          position: "absolute",
+          top: 12,
+          left: 12,
+          display: "flex",
+          gap: 8,
+          zIndex: 10,
+          pointerEvents: "none", // nie blokuj orbitowania poza przyciskami
+        }}
+      >
+        <button
+          style={btnStyle}
+          onClick={() => callStage(focusModelFirstStageSmooth)}
+          title="Etap 1 (skrót: 1)"
+        >
+          Etap 1
+        </button>
+        <button
+          style={btnStyle}
+          onClick={() => callStage(focusModelSecondStageSmooth)}
+          title="Etap 2 (skrót: 2)"
+        >
+          Etap 2
+        </button>
+        <button
+          style={btnStyle}
+          onClick={() => callStage(focusModelThirdStageSmooth)}
+          title="Etap 3 (skrót: 3)"
+        >
+          Etap 3
+        </button>
+        <button
+          style={btnStyle}
+          onClick={() => callStage(focusModelFourthStageSmooth)}
+          title="Etap 4 (skrót: 4)"
+        >
+          Etap 4
+        </button>
+      </div>
+
+      {/* Mount na renderer */}
+      <div
+        ref={mountRef}
+        style={{ position: "absolute", inset: 0 }}
+      />
+    </div>
+  );
 }
+
+// proste, czytelne style dla przycisków
+const btnStyle = {
+  pointerEvents: "auto",
+  padding: "6px 10px",
+  borderRadius: 10,
+  border: "1px solid #ddd",
+  background: "rgba(255,255,255,0.85)",
+  backdropFilter: "blur(4px)",
+  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+  fontSize: 14,
+  cursor: "pointer",
+  userSelect: "none",
+};

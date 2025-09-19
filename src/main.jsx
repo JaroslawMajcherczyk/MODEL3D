@@ -4,7 +4,7 @@ import './index.css';
 import App from './App.jsx';
 
 // rejestr akcji do window.Nexus.actions (C# -> React)
-import './components/actions.jsx';
+import './components/modelActions.jsx';
 
 import { HubConnectionBuilder, LogLevel, HttpTransportType  } from '@microsoft/signalr';
 
@@ -34,26 +34,28 @@ window.addEventListener('nexus:actions:ready', () => {
   });
 
   // model -> wczytany
-  window.addEventListener('nexus:model:loaded', () => {
+  window.addEventListener('nexus:model:loaded', async () => {
     ready.model = true;
     console.log('[Nexus] model loaded');
+    
     // wyślij do C# tak, by Kestrel mógł zwolnić WaitFrontendReadyAsync
     window.Nexus.send?.('ModelReady');
     maybeAnnounceReady();
+    
   });
 
   // --- SignalR connect ---
   const sp = new URLSearchParams(location.search);
   const hubParam = sp.get('hub'); // np. ?hub=http://127.0.0.1:5183/nexus
-  const url = hubParam || 'http://127.0.0.1:5177/nexus';
+  const url =
+   hubParam ||
+   `${location.protocol}//${location.hostname}:5177/nexus` || // twój dev default
+   `${location.origin}/nexus`; // reverse-proxy/same-origin fallback
 
   if (window.__NEXUS_CONN__) return; // guard na HMR/StrictMode
 
   const conn = new HubConnectionBuilder()
-    .withUrl(url, {
-     transport: HttpTransportType.WebSockets,
-     skipNegotiation: true
-   })
+    .withUrl(url)
     .withAutomaticReconnect()
     .configureLogging(LogLevel.Information)
     .build();
