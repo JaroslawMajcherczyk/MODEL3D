@@ -18,7 +18,7 @@ const MODEL_1 = {
       labelFontSize: 24,
       labelSide: "bottom",
       gapPx: 14,
-      offsetPx: { x: -40, y: -290 },
+      offsetPx: { x: -20, y: -620 },
     },
     3: {
       text: "Zmierz szerokość trzeciego zacisku",
@@ -26,7 +26,7 @@ const MODEL_1 = {
       labelFontSize: 24,
       labelSide: "bottom",
       gapPx: 14,
-      offsetPx: { x: 140, y: 220 },
+      offsetPx: { x: 140, y: 210 },
     },
     4: {
       text: "Zmierz szerokość czwartego zacisku",

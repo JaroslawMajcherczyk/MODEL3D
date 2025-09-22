@@ -236,7 +236,12 @@ export function markMeasureInvalid() {
 export function markBack() {
   window.dispatchEvent(new Event("nexus:back"));
 }
-
+export function setSummaryRequiredSlots(n = 4) {
+  window.Nexus ??= {}; window.Nexus.ui ??= {};
+  const k = Math.max(1, Math.min(4, Number(n) || 4));
+  window.Nexus.ui.summaryRequiredSlots = k;
+  window.dispatchEvent(new Event("nexus:summary:required"));
+}
 // ============================================================================
 // 3) Rejestracja do window.Nexus.actions (tylko loader + pomiary)
 // ============================================================================
@@ -249,7 +254,7 @@ if (typeof window !== "undefined") {
     // Pomiar / Summary
     setMeasure, showMeasure, hideMeasure, clearMeasure,
     fireSummaryUpdate, clearSummary, showSummary, hideSummary, clearSummarySlot,
-    markMeasureInvalid, markBack,
+    markMeasureInvalid, markBack, setSummaryRequiredSlots,
   });
 
   // Dwa eventy: „extended” do logów i „ready” dla handshake w main.jsx
