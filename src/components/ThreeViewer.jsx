@@ -169,7 +169,7 @@ export default function ThreeViewer() {
           pointerEvents: "none", // nie blokuj orbitowania poza przyciskami
         }}
       >
-        <button
+        {/* <button
           style={btnStyle}
           onClick={() => callStage(focusModelFirstStageSmooth)}
           title="Etap 1 (skrót: 1)"
@@ -196,7 +196,7 @@ export default function ThreeViewer() {
           title="Etap 4 (skrót: 4)"
         >
           Etap 4
-        </button>
+        </button> */}
       </div>
 
       {/* Mount na renderer */}
@@ -209,15 +209,15 @@ export default function ThreeViewer() {
 }
 
 // proste, czytelne style dla przycisków
-const btnStyle = {
-  pointerEvents: "auto",
-  padding: "6px 10px",
-  borderRadius: 10,
-  border: "1px solid #ddd",
-  background: "rgba(255,255,255,0.85)",
-  backdropFilter: "blur(4px)",
-  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-  fontSize: 14,
-  cursor: "pointer",
-  userSelect: "none",
-};
+// const btnStyle = {
+//   pointerEvents: "auto",
+//   padding: "6px 10px",
+//   borderRadius: 10,
+//   border: "1px solid #ddd",
+//   background: "rgba(255,255,255,0.85)",
+//   backdropFilter: "blur(4px)",
+//   boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+//   fontSize: 14,
+//   cursor: "pointer",
+//   userSelect: "none",
+// };

@@ -38,17 +38,6 @@ function resolveModelUrl(input) {
   return new URL(base + input.replace(/^\/+/, ""), window.location.origin).href;
 }
 
-/** Wyprowadź modelKey na podstawie nazwy pliku (1.*→model1, 2.*→model2, 3.*→model3). */
-// modelActions.jsx
-// function deriveModelKeyFromUrl(src) {
-//   try {
-//     const file = (new URL(src, window.location.origin).pathname.split("/").pop() || "").toLowerCase();
-//     // dopasuj np. "2.gltf" -> "2"
-//     const m = file.match(/^(\d+)\.gltf$/i);
-//     return m ? m[1] : "default";
-//   } catch { return "default"; }
-// }
-
 function extractModelKeyFromUrl(u) {
   try {
     const s = String(u || "");
