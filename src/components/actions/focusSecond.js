@@ -1,18 +1,16 @@
-// src/components/actions/focusSecond.js
 import * as THREE from "three";
-import { resolveRefs, fitDistanceForSize, animateCameraTo } from "./core";
+import { resolveRefs, fitDistanceForSize } from "./core";
+import { getCanonicalViewAxes, animateCameraToDir } from "./coreEx";
 import { getCameraStageOpts } from "../../config/focusProfilesCamera";
 import { getArrowStageOpts }  from "../../config/focusProfilesArrow";
 
 export function focusModelSecondStageSmooth(opts = {}) {
-  // schowaj ewentualną strzałkę z poprzedniego etapu
   window.dispatchEvent(new Event("nexus:arrowhud:hide"));
   window.dispatchEvent(new Event("nexus:stage:second"));
 
-  // wybór profilu wg aktywnego modelu (ustawiane przy loadFromProjectAndRotateX)
   const modelKey = window.Nexus?.modelKey || "default";
-  const cam = getCameraStageOpts(2, modelKey, opts);     // profil kamery dla Stage 2 (+ nadpisania z opts)
-  const hud = getArrowStageOpts (2, modelKey, opts.hud); // profil HUD dla Stage 2 (+ nadpisania z opts.hud)
+  const cam = getCameraStageOpts(2, modelKey, opts);
+  const hud = getArrowStageOpts (2, modelKey, opts.hud);
 
   const { cameraRef, controlsRef, modelRef } = resolveRefs(opts);
   const camera   = cameraRef?.current;
@@ -23,11 +21,10 @@ export function focusModelSecondStageSmooth(opts = {}) {
     return;
   }
 
-  // --- wyznacz region dla etapu 2 ---
+  // --- region ---
   const box = new THREE.Box3().setFromObject(model);
   const size = box.getSize(new THREE.Vector3());
 
-  // dominująca oś (z możliwością wymuszenia w profilu)
   let axis = "x", axisSize = size.x;
   if (cam.forceAxis === "y") { axis = "y"; axisSize = size.y; }
   else if (cam.forceAxis === "z") { axis = "z"; axisSize = size.z; }
@@ -60,7 +57,7 @@ export function focusModelSecondStageSmooth(opts = {}) {
   const regionSize = regionBox.getSize(new THREE.Vector3());
   const regionCtr  = regionBox.getCenter(new THREE.Vector3());
 
-  // --- dolot kamery ---
+  // --- target + przemieszczenie w stałej ramie odniesienia ---
   const padding = cam.padding ?? 1.06;
   const duration = cam.duration ?? 1100;
   const align = cam.align ?? -0.10;
@@ -75,10 +72,19 @@ export function focusModelSecondStageSmooth(opts = {}) {
   ));
 
   const distance = fitDistanceForSize(camera, regionSize, padding);
-  animateCameraTo({ camera, controls, newTarget: target, newDistance: distance, duration });
 
-  // --- HUD: „pod” wycinkiem względem bieżącego up kamery ---
-  const up = camera.up.clone().normalize();
+  // użyj kanonicznego kierunku widoku
+  const { view: canonicalView, up: canonicalUp } = getCanonicalViewAxes();
+  animateCameraToDir({
+    camera, controls,
+    newTarget: target,
+    newDistance: distance,
+    viewDir: canonicalView,
+    duration
+  });
+
+  // --- HUD względem stałego up (kanoniczny) ---
+  const up = canonicalUp;
   const bottomMid = regionCtr.clone().add(up.clone().multiplyScalar(-0.5 * regionSize.y));
   const gap = Math.max(regionSize.x, regionSize.y, regionSize.z) * 0.04;
   const tip = bottomMid.clone().add(up.clone().multiplyScalar(-gap));

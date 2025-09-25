@@ -24,13 +24,27 @@ export function fitDistanceForSize(camera, sizeVec, padding = 1.15) {
 let __animToken = 0;
 export const EASE = (t)=> (t < 0.5 ? 2*t*t : -1 + (4 - 2*t)*t);
 
-export function animateCameraTo({ camera, controls, newTarget, newDistance, duration = 800 }) {
+/**
+ * Animacja kamery. Teraz opcjonalnie przyjmuje `newPosition`.
+ * Gdy `newPosition` jest podany, pozycja kamery jest interpolo­wana do tej wartości.
+ * W przeciwnym wypadku używamy dotychczasowej logiki opartej o `newDistance`.
+ */
+export function animateCameraTo({ camera, controls, newTarget, newDistance, newPosition, duration = 800 }) {
   const myToken = ++__animToken;
   return new Promise((resolve) => {
     const startTarget = controls.target.clone();
     const startPos    = camera.position.clone();
-    const dir         = startPos.clone().sub(startTarget).normalize();
-    const endPos      = newTarget.clone().add(dir.multiplyScalar(newDistance));
+
+    const endTarget = newTarget ? newTarget.clone() : startTarget.clone();
+
+    const endPos = newPosition
+      ? newPosition.clone()
+      : (() => {
+          const dir = startPos.clone().sub(startTarget).normalize();
+          const dist = newDistance ?? startPos.distanceTo(startTarget);
+          return endTarget.clone().add(dir.multiplyScalar(dist));
+        })();
+
     const t0 = performance.now();
 
     function step(now){
@@ -38,7 +52,7 @@ export function animateCameraTo({ camera, controls, newTarget, newDistance, dura
       const t = Math.min(1, (now - t0) / duration);
       const k = EASE(t);
 
-      controls.target.copy(startTarget).lerp(newTarget, k);
+      controls.target.copy(startTarget).lerp(endTarget, k);
       camera.position.copy(startPos).lerp(endPos, k);
 
       const d = camera.position.distanceTo(controls.target);

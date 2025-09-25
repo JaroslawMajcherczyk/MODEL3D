@@ -1,21 +1,20 @@
 // src/components/actions/focusThird.js
 import * as THREE from "three";
 import {
-  resolveRefs, ensureNav, animateCameraTo,
-  orbitCameraAroundTarget, dollyTo
+  resolveRefs, ensureNav, fitDistanceForSize, dollyTo,
+  orbitCameraAroundTarget, capturePose
 } from "./core";
+import { getCanonicalViewAxes, animateCameraToDir } from "./coreEx";
 import { getCameraStageOpts } from "../../config/focusProfilesCamera";
 import { getArrowStageOpts }  from "../../config/focusProfilesArrow";
 
 export function focusModelThirdStageSmooth(opts = {}) {
-  // schowaj HUD z poprzedniego etapu
   window.dispatchEvent(new Event("nexus:arrowhud:hide"));
   window.dispatchEvent(new Event("nexus:stage:third"));
 
-  // wybór profilu wg aktywnego modelu
   const modelKey = window.Nexus?.modelKey || "default";
-  const cam = getCameraStageOpts(3, modelKey, opts);     // profil kamery (z nadpisaniami z opts)
-  const hud = getArrowStageOpts (3, modelKey, opts.hud); // profil HUD (z nadpisaniami z opts.hud)
+  const cam = getCameraStageOpts(3, modelKey, opts);
+  const hud = getArrowStageOpts (3, modelKey, opts.hud);
 
   const {
     fraction   = 0.82,
@@ -33,21 +32,21 @@ export function focusModelThirdStageSmooth(opts = {}) {
   const camera = cameraRef?.current, controls = controlsRef?.current, model = modelRef?.current;
   if (!camera || !controls || !model) { console.warn("[actions] refs not ready (stage3)"); return; }
 
-  // aktualizacja stanu nawigacji (ważne dla reverse 4→3)
   const nav = ensureNav();
   nav.prevStage = nav.currStage;
   nav.currStage = 3;
 
-  // helper: policz region i (opcjonalnie) zaktualizuj kamerę
-  function computeRegionAndMaybeFly(updateCamera = true) {
+  function computeRegion() {
     const box = new THREE.Box3().setFromObject(model);
     const size = box.getSize(new THREE.Vector3());
 
-    // dominująca oś
     let axis = "x", axisSize = size.x;
     if (forceAxis === "y") { axis = "y"; axisSize = size.y; }
     else if (forceAxis === "z") { axis = "z"; axisSize = size.z; }
-    else { if (size.y > axisSize) { axis = "y"; axisSize = size.y; } if (size.z > axisSize) { axis = "z"; axisSize = size.z; } }
+    else {
+      if (size.y > axisSize) { axis = "y"; axisSize = size.y; }
+      if (size.z > axisSize) { axis = "z"; axisSize = size.z; }
+    }
 
     const frac = THREE.MathUtils.clamp(fraction, 0, 1);
     const segHalf = 0.5 * THREE.MathUtils.clamp(regionFrac, 0.01, 1) * axisSize;
@@ -68,38 +67,36 @@ export function focusModelThirdStageSmooth(opts = {}) {
     const regionBox = new THREE.Box3(rMin, rMax);
     const regionSize = regionBox.getSize(new THREE.Vector3());
     const regionCtr  = regionBox.getCenter(new THREE.Vector3());
-
-    if (updateCamera) {
-      const viewDir   = new THREE.Vector3(); camera.getWorldDirection(viewDir).normalize();
-      const viewUp    = camera.up.clone().normalize();
-      const viewRight = new THREE.Vector3().crossVectors(viewDir, viewUp).normalize();
-
-      const target = regionCtr.clone();
-      target[axis] += (align ?? 0) * segHalf;
-      target.add(new THREE.Vector3(
-        (offsetN?.x || 0) * size.x,
-        (offsetN?.y || 0) * size.y,
-        (offsetN?.z || 0) * size.z
-      ));
-      if (screenShift) {
-        target.add(viewRight.multiplyScalar((screenShift.x || 0) * regionSize.x));
-        target.add(viewUp   .multiplyScalar((screenShift.y || 0) * regionSize.y));
-      }
-
-      const max = Math.max(regionSize.x, regionSize.y, regionSize.z);
-      const fitH = max / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
-      const fitW = fitH / camera.aspect;
-      const distance = (padding ?? 1.06) * Math.max(fitH, fitW);
-
-      animateCameraTo({ camera, controls, newTarget: target, newDistance: distance, duration: (duration ?? 1100) });
-    }
-
-    return { regionBox, regionSize, regionCtr, axis };
+    return { regionBox, regionSize, regionCtr, axis, segHalf, size };
   }
 
-  // helper: pokaż HUD strzałkę dla regionu (bez zmiany kamery)
+  const { view: canonicalView, up: canonicalUp, right: canonicalRight } = getCanonicalViewAxes();
+
+  function goToRegion({ regionSize, regionCtr, axis, segHalf, size }) {
+    const target = regionCtr.clone();
+    target[axis] += (align ?? 0) * segHalf;
+    target.add(new THREE.Vector3(
+      (offsetN?.x || 0) * size.x,
+      (offsetN?.y || 0) * size.y,
+      (offsetN?.z || 0) * size.z
+    ));
+    if (screenShift) {
+      target.add(canonicalRight.clone().multiplyScalar((screenShift.x || 0) * regionSize.x));
+      target.add(canonicalUp.clone()   .multiplyScalar((screenShift.y || 0) * regionSize.y));
+    }
+
+    const distance = fitDistanceForSize(camera, regionSize, padding);
+    return animateCameraToDir({
+      camera, controls,
+      newTarget: target,
+      newDistance: distance,
+      viewDir: canonicalView,
+      duration: (duration ?? 1100)
+    });
+  }
+
   function showHud(regionSize, regionCtr) {
-    const up = camera.up.clone().normalize();
+    const up = canonicalUp;
     const bottomMid = regionCtr.clone().add(up.clone().multiplyScalar(-0.5 * regionSize.y));
     const gap = Math.max(regionSize.x, regionSize.y, regionSize.z) * 0.04;
     const tip = bottomMid.clone().add(up.clone().multiplyScalar(-gap));
@@ -118,13 +115,12 @@ export function focusModelThirdStageSmooth(opts = {}) {
     }));
   }
 
-  // reverse 4 → 3 (jeśli mamy snapshot)
+  // reverse 4→3
   if (nav.prevStage === 4 && nav.t43) {
     const t = nav.t43;
     (async () => {
       try {
         await dollyTo(camera, controls, t.regionCtr, t.distance, t.postMs);
-
         const keys = [
           { t: 0, d: t.distance },
           { t: Math.max(0.05, Math.min(0.95, t.midAt)), d: t.distance * t.midZoom },
@@ -136,16 +132,32 @@ export function focusModelThirdStageSmooth(opts = {}) {
           totalAngle: THREE.MathUtils.degToRad(t.orbitAngleDeg) * (-t.dirSign),
           duration: t.orbitMs, distanceKeys: keys,
         });
-
         await dollyTo(camera, controls, t.fromPose.target, t.fromPose.distance, t.preMs);
 
-        // po cofnięciu: policz region dla etapu 3 i pokaż HUD (bez dodatkowego ruchu kamery)
-        const { regionSize, regionCtr } = computeRegionAndMaybeFly(false);
-        showHud(regionSize, regionCtr);
+        const reg2 = computeRegion();
+        await goToRegion(reg2);
+        showHud(reg2.regionSize, reg2.regionCtr);
+
+        // snap po Stage 3 (po reverse), do wejścia 3→4
+        const dist2 = fitDistanceForSize(camera, reg2.regionSize, padding);
+        const fromPose2 = capturePose(camera, controls);
+        nav.t34 = {
+          fromPose: fromPose2,
+          regionCtr: reg2.regionCtr,
+          distance: dist2,
+          axis: reg2.axis,
+          segHalf: reg2.segHalf
+        };
       } catch (e) {
         console.warn("[actions] stage3 reverse failed, fallback to normal", e);
-        const { regionSize, regionCtr } = computeRegionAndMaybeFly(true);
-        showHud(regionSize, regionCtr);
+        const reg = computeRegion();
+        await goToRegion(reg);
+        showHud(reg.regionSize, reg.regionCtr);
+
+        // snap po Stage 3 (fallback)
+        const dist = fitDistanceForSize(camera, reg.regionSize, padding);
+        const fromPose = capturePose(camera, controls);
+        nav.t34 = { fromPose, regionCtr: reg.regionCtr, distance: dist, axis: reg.axis, segHalf: reg.segHalf };
       }
     })();
     console.log(`[actions] stage3 (reverse from 4, modelKey=${modelKey})`);
@@ -153,7 +165,21 @@ export function focusModelThirdStageSmooth(opts = {}) {
   }
 
   // normalny etap 3
-  const { regionSize, regionCtr } = computeRegionAndMaybeFly(true);
-  showHud(regionSize, regionCtr);
+  const reg = computeRegion();
+  goToRegion(reg).then(() => {
+    showHud(reg.regionSize, reg.regionCtr);
+
+    // ⬇ SNAP po Stage 3 — do płynnego wejścia w Stage 4
+    const distance = fitDistanceForSize(camera, reg.regionSize, padding);
+    const fromPose = capturePose(camera, controls);
+    nav.t34 = {
+      fromPose,
+      regionCtr: reg.regionCtr,
+      distance,
+      axis: reg.axis,
+      segHalf: reg.segHalf
+    };
+  });
+
   console.log(`[actions] stage3 + HUD (modelKey=${modelKey})`);
 }

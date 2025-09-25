@@ -1,25 +1,25 @@
-// src/components/actions/focusFirst.js
 import * as THREE from "three";
-import { runWhenReady, animateCameraTo } from "./core";
+import { runWhenReady, fitDistanceForSize } from "./core";
+import { getCanonicalViewAxes, animateCameraToDir } from "./coreEx";
 import { getCameraStageOpts } from "../../config/focusProfilesCamera";
 import { getArrowStageOpts }  from "../../config/focusProfilesArrow";
 
 export function focusModelFirstStageSmooth(opts = {}) {
-  // czyść HUD z poprzedniego etapu
   window.dispatchEvent(new Event("nexus:arrowhud:hide"));
   window.dispatchEvent(new Event("nexus:stage:first"));
 
-  // wybór profilu na podstawie aktualnego modelu
   const modelKey = window.Nexus?.modelKey || "default";
-  const cam = getCameraStageOpts(1, modelKey, opts);     // profil kamery dla Stage 1 (+ ewentualne nadpisania z opts)
-  const hud = getArrowStageOpts (1, modelKey, opts.hud); // profil HUD dla Stage 1 (+ ewentualne nadpisania z opts.hud)
+  const cam = getCameraStageOpts(1, modelKey, opts);
+  const hud = getArrowStageOpts (1, modelKey, opts.hud);
+
+  // czy używać stałych (kanonicznych) osi do przesunięć celu
+  const useWorldFrame = cam.useWorldFrame ?? true;
 
   runWhenReady(async ({ camera, controls, model }) => {
-    // 1) Region pod kamerę
+    // --- region ---
     const box  = new THREE.Box3().setFromObject(model);
     const size = box.getSize(new THREE.Vector3());
 
-    // dominująca oś (z możliwością wymuszenia)
     let axis = "x", axisSize = size.x;
     if (cam.forceAxis === "y") { axis = "y"; axisSize = size.y; }
     else if (cam.forceAxis === "z") { axis = "z"; axisSize = size.z; }
@@ -36,7 +36,6 @@ export function focusModelFirstStageSmooth(opts = {}) {
     const rMin = box.min.clone(), rMax = box.max.clone();
     rMin[axis] = segStart; rMax[axis] = segEnd;
 
-    // „ściśnij” w osiach poprzecznych
     const shrink = cam.shrink ?? 0.55;
     for (const k of ["x","y","z"]) {
       if (k !== axis) {
@@ -50,41 +49,47 @@ export function focusModelFirstStageSmooth(opts = {}) {
     const regionSize = regionBox.getSize(new THREE.Vector3());
     const regionCtr  = regionBox.getCenter(new THREE.Vector3());
 
-    // 2) Target kamery z lekkim shiftem w ekranie
-    const fitDist = (camObj, sz, pad=1.15) => {
-      const maxSize = Math.max(sz.x, sz.y, sz.z);
-      const fitH = maxSize / (2 * Math.tan(THREE.MathUtils.degToRad(camObj.fov) / 2));
-      const fitW = fitH / camObj.aspect;
-      return (pad ?? 1.15) * Math.max(fitH, fitW);
-    };
-    const distance = fitDist(camera, regionSize, cam.padding ?? 1.04);
-
-    const viewDir   = new THREE.Vector3(); camera.getWorldDirection(viewDir).normalize();
-    const viewUp    = camera.up.clone().normalize();
-    const viewRight = new THREE.Vector3().crossVectors(viewDir, viewUp).normalize();
+    // --- target + dystans ---
+    const distance = fitDistanceForSize(camera, regionSize, cam.padding ?? 1.04);
 
     const shiftX = (cam.screenShift?.x ?? cam.leftBiasN ?? -0.30);
     const shiftY = (cam.screenShift?.y ?? cam.raiseN    ?? -0.06);
 
-    const target = regionCtr.clone()
-      .add(viewRight.multiplyScalar(shiftX * regionSize.x))
-      .add(viewUp   .multiplyScalar(shiftY * regionSize.y));
+    // wektory do przesunięć
+    let rightVec, upVec;
+    if (useWorldFrame) {
+      // z kanonicznej bazy (stałe osie względem sceny)
+      const { right, up } = getCanonicalViewAxes();
+      rightVec = right; upVec = up;
+    } else {
+      // bieżące osie kamery (legacy)
+      const viewDir = new THREE.Vector3(); camera.getWorldDirection(viewDir).normalize();
+      const viewUp  = camera.up.clone().normalize();
+      rightVec = new THREE.Vector3().crossVectors(viewDir, viewUp).normalize();
+      upVec    = viewUp;
+    }
 
-    await animateCameraTo({
+    const target = regionCtr.clone()
+      .add(rightVec.clone().multiplyScalar(shiftX * regionSize.x))
+      .add(upVec.clone()   .multiplyScalar(shiftY * regionSize.y));
+
+    // kierunek widoku – kanoniczny (niezależny od tego, jak user obrócił kamerę)
+    const { view: canonicalView } = getCanonicalViewAxes();
+    await animateCameraToDir({
       camera,
       controls,
       newTarget: target,
       newDistance: distance,
+      viewDir: canonicalView,
       duration: cam.duration ?? 900
     });
 
-    // 3) Punkt kotwiczenia HUD – „pod” regionem w kierunku up kamery
-    const up = camera.up.clone().normalize();
-    const bottomMid = regionCtr.clone().add(up.clone().multiplyScalar(-0.5 * regionSize.y));
+    // --- HUD (użyj up ze świata/kanoniczny, aby overlay był stabilny) ---
+    const upForHud = getCanonicalViewAxes().up; // stabilny „up”
+    const bottomMid = regionCtr.clone().add(upForHud.clone().multiplyScalar(-0.5 * regionSize.y));
     const gap = Math.max(regionSize.x, regionSize.y, regionSize.z) * 0.04;
-    const tip = bottomMid.clone().add(up.clone().multiplyScalar(-gap));
+    const tip = bottomMid.clone().add(upForHud.clone().multiplyScalar(-gap));
 
-    // 4) HUD: strzałka + label według profilu
     window.dispatchEvent(new CustomEvent("nexus:arrowhud:show", {
       detail: {
         mode: "world",
@@ -98,6 +103,6 @@ export function focusModelFirstStageSmooth(opts = {}) {
       }
     }));
 
-    console.log(`[stage1] HUD arrow shown (modelKey=${modelKey})`);
+    console.log(`[stage1] HUD (modelKey=${modelKey}, worldFrame=${useWorldFrame})`);
   });
 }
