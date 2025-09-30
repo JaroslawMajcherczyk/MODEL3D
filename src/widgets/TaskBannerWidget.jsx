@@ -3,11 +3,11 @@ import { useEffect, useState } from "react";
 export default function TaskBannerWidget({
   topOffset = 18,
   initialVisible = true,
-  // DOMYŚLNY TEKST (dokładnie ten, o który prosisz):
-  message: initialMessage = "Zmierz wszystkie zaciski na wykonanym elemencie krok po kroku na podanej wizualizacji",
+  message: initialMessage = "Misurare tutti i morsetti sull'elemento completato passo dopo passo sulla visualizzazione fornita.",
 }) {
   const [visible, setVisible] = useState(initialVisible);
   const [message, setMessage] = useState(initialMessage);
+  const [paused, setPaused] = useState(false);
 
   useEffect(() => {
     function onModelLoaded() { setVisible(true); }
@@ -22,12 +22,19 @@ export default function TaskBannerWidget({
       }
     }
 
+    // NEW: pause/resume
+    const onPause = () => setPaused(true);
+    const onResume = () => setPaused(false);
+
     window.addEventListener("nexus:model:loaded", onModelLoaded);
     window.addEventListener("nexus:stage:first", onStageFirst);
     window.addEventListener("nexus:taskbanner:show", onShow);
     window.addEventListener("nexus:taskbanner:hide", onHide);
     window.addEventListener("nexus:taskbanner:toggle", onToggle);
     window.addEventListener("nexus:taskbanner:set", onSet);
+
+    window.addEventListener("nexus:ui:taskbanner:pause", onPause);
+    window.addEventListener("nexus:ui:taskbanner:resume", onResume);
 
     return () => {
       window.removeEventListener("nexus:model:loaded", onModelLoaded);
@@ -36,10 +43,13 @@ export default function TaskBannerWidget({
       window.removeEventListener("nexus:taskbanner:hide", onHide);
       window.removeEventListener("nexus:taskbanner:toggle", onToggle);
       window.removeEventListener("nexus:taskbanner:set", onSet);
+
+      window.removeEventListener("nexus:ui:taskbanner:pause", onPause);
+      window.removeEventListener("nexus:ui:taskbanner:resume", onResume);
     };
   }, []);
 
-  if (!visible) return null;
+  if (!visible || paused) return null;
 
   return (
     <div
@@ -54,7 +64,6 @@ export default function TaskBannerWidget({
         color: "white",
         padding: "18px 28px",
         borderRadius: 14,
-        // Responsywna szerokość i pewne zawijanie:
         minWidth: 300,
         maxWidth: "min(92vw, 900px)",
         display: "inline-block",
@@ -65,9 +74,9 @@ export default function TaskBannerWidget({
         fontSize: 32,
         fontWeight: 700,
         letterSpacing: 0.4,
-        whiteSpace: "normal",         // zawijaj
-        wordBreak: "break-word",      // łam długie słowa
-        overflowWrap: "anywhere",     // nowszy odpowiednik
+        whiteSpace: "normal",
+        wordBreak: "break-word",
+        overflowWrap: "anywhere",
         lineHeight: 1.35,
       }}
     >

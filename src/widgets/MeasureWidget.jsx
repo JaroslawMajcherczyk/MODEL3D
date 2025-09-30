@@ -75,7 +75,7 @@ export default function MeasureWidget({ topOffset = 18 }) {
       </div>
       {(typeof min === "number" && typeof max === "number") && (
         <div style={{ fontSize: 14, opacity: 0.95, marginTop: 6 }}>
-          Zakres: {min.toFixed(2)} – {max.toFixed(2)} {unit || ""}
+          Allineare: {min.toFixed(2)} – {max.toFixed(2)} {unit || ""}
         </div>
       )}
     </div>

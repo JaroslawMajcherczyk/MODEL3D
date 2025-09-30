@@ -2,38 +2,22 @@
 // Ten plik po refaktorze zawiera:
 //  - ładowanie modelu (loadFromProjectAndRotateX)
 //  - moduł pomiarów i summary (setMeasure, show/hide/clearMeasure, ...)
+//  - sygnały do UndoCountdown (start/cancel + automatyczny trigger na etapie końcowym)
 //  - rejestrację WYŁĄCZNIE tych akcji w window.Nexus.actions
 
 import { disposeObject, loadGltfFromUrl } from "./threeUtils";
 import { rotateX90, setViewRight } from "./viewOps";
 
-/* ------------------------------- URL resolver -------------------------------
-
-Przyjmuje:
-- absolutne: http(s)://, blob:, data:
-- od root-a: /model/gltf/1.gltf
-- relatywne: ./foo/1.gltf, ../bar/1.gltf (normalizowane do /… względem origin)
-- „gołą” nazwę: 1.gltf -> (window.__NEXUS_MODELS_BASE__ || "/model/gltf/") + 1.gltf
-
-------------------------------------------------------------------------------- */
-
+/* ------------------------------- URL resolver ------------------------------- */
 
 function resolveModelUrl(input) {
   if (!input || typeof input !== "string") return null;
-
-  // 1) Absolutne URL-e i schematy specjalne
   if (/^(https?:|blob:|data:)/i.test(input)) return input;
-
-  // 2) Origin-relative ("/model/gltf/1.gltf")
   if (input.startsWith("/")) return new URL(input, window.location.origin).href;
-
-  // 3) Względne "../" lub "./" → znormalizuj do ścieżki od root-a
   if (input.startsWith("../") || input.startsWith("./")) {
     const cleaned = input.replace(/^(\.\/)+/, "").replace(/^(\.\.\/)+/, "");
     return new URL("/" + cleaned, window.location.origin).href;
   }
-
-  // 4) Sama nazwa pliku → katalog bazowy na modele (public/model/gltf/)
   const base = (window.__NEXUS_MODELS_BASE__ || "/model/gltf/").replace(/\/+$/, "/");
   return new URL(base + input.replace(/^\/+/, ""), window.location.origin).href;
 }
@@ -41,26 +25,22 @@ function resolveModelUrl(input) {
 function extractModelKeyFromUrl(u) {
   try {
     const s = String(u || "");
-    // np. /model/gltf/2.gltf -> "2"
     const m = s.match(/\/([^\\/?#]+)\.gltf(\?|#|$)/i);
     return m ? m[1] : "default";
   } catch { return "default"; }
 }
-// ============================================================================
-// 1) Załaduj model + obrót X + startowy widok RIGHT
-//    UWAGA: brak domyślnego modelu — MUSISZ podać projectRelUrl z backendu
-// ============================================================================
+
+/* ------------------------------- Loader modelu ------------------------------- */
+
 export async function loadFromProjectAndRotateX(opts = {}) {
   const cfg = {
-    projectRelUrl: null,   // <- MUSI przyjść z C#
+    projectRelUrl: null,
     onLoading: () => {},
     onLoaded:  () => {},
-    // (opcjonalnie można podać modelKey ręcznie; jeśli nie, wyliczymy z nazwy pliku)
     modelKey: undefined,
     ...opts,
   };
 
-  // Refs z opts albo z window.Nexus.refs
   const g = (typeof window !== "undefined" && window.Nexus && window.Nexus.refs) || {};
   const scene    = (cfg.sceneRef    ?? g.sceneRef   )?.current;
   const camera   = (cfg.cameraRef   ?? g.cameraRef  )?.current;
@@ -77,17 +57,16 @@ export async function loadFromProjectAndRotateX(opts = {}) {
     return;
   }
   console.log("[loader] requested:", cfg.projectRelUrl, "resolved:", src);
-// ⬇️ USTAW KLUCZ OD RAZU (zanim zacznie się ładowanie)
+
   const key = extractModelKeyFromUrl(src);
   window.Nexus ??= {};
   window.Nexus.modelKey = key;
   window.Nexus.currentModelUrl = src;
   window.dispatchEvent(new CustomEvent("nexus:model:key", { detail: key }));
   console.log("[loader] modelKey:", key, "url:", src);
+
   cfg.onLoading(true);
   try {
-    // Sonda HEAD jest tylko ostrzegawcza — NIE blokujemy ładowania,
-    // bo dev serwery (Vite) czasem nie wspierają HEAD poprawnie.
     try {
       const head = await fetch(src, { method: "HEAD" });
       const ct = head.headers.get("content-type") || "";
@@ -98,28 +77,23 @@ export async function loadFromProjectAndRotateX(opts = {}) {
       console.warn("[actions] probe (HEAD) failed — continuing anyway:", probeErr?.message || probeErr);
     }
 
-    // Usuń poprzedni model
     if (modelRef?.current) {
       scene.remove(modelRef.current);
       disposeObject(modelRef.current);
       modelRef.current = null;
     }
 
-    // Wczytaj GLTF
     const root = await loadGltfFromUrl(src);
     rotateX90(root);
     if (modelRef) modelRef.current = root;
     scene.add(root);
 
-    // Ustaw widok startowy
     setViewRight(camera, controls, root);
 
-    // (opcjonalnie) zapisz meta — BEZ zmiany modelKey
     window.Nexus ??= {};
     const file = (new URL(src, window.location.origin).pathname.split("/").pop() || "");
     window.Nexus.modelMeta = { key: window.Nexus.modelKey, src, file };
 
-    // Sygnały o wczytaniu
     cfg.onLoaded(root);
     window.dispatchEvent(new Event("nexus:model:loaded"));
     window.Nexus?.send?.("ModelReady");
@@ -131,9 +105,26 @@ export async function loadFromProjectAndRotateX(opts = {}) {
   }
 }
 
-// ============================================================================
-// 2) SUMMARY / POMIARY
-// ============================================================================
+/* --------------------------- SUMMARY / POMIARY + UNDO --------------------------- */
+
+// terminalny etap (ostatni pomiar) zależny od modelu
+const TERMINAL_STAGE_BY_MODELKEY = {
+  "1": 4,
+  "2": 4,
+  "3": 2,
+  default: 4,
+};
+
+// proste API do uruchamiania/kończenia licznika cofnij
+export function startUndoCountdown(seconds = 12, extra = {}) {
+  window.dispatchEvent(new CustomEvent("nexus:undo:start", {
+    detail: { seconds, ...extra }
+  }));
+}
+export function cancelUndoCountdown() {
+  window.dispatchEvent(new Event("nexus:undo:cancel"));
+}
+
 function ensureSummaryStore() {
   window.Nexus ??= {};
   const s = (window.Nexus.summary ??= {
@@ -161,7 +152,7 @@ export function setMeasure(value, unit = "mm", min = null, max = null, stage = n
   window.Nexus ??= {};
   window.Nexus.lastMeasure = { value: v, unit, min: m, max: M, stage, ts: Date.now() };
 
-  // live
+  // live event dla UI/pomiarów
   window.dispatchEvent(new CustomEvent("nexus:measure", {
     detail: { value: v, unit, min: m, max: M, stage }
   }));
@@ -176,7 +167,22 @@ export function setMeasure(value, unit = "mm", min = null, max = null, stage = n
   // historia
   pushMeasureToHistory({ value: v, unit, min: m, max: M, stage, ts: Date.now() });
 
-  console.log("[setMeasure]", { stage, value: v });
+  // 🔴 AUTOMATYCZNY TRIGGER COUNTDOWN NA ETAPIE KOŃCOWYM, TYLKO GDY POZA ZAKRESEM
+  const modelKey = window.Nexus?.modelKey || "default";
+  const terminalStage = TERMINAL_STAGE_BY_MODELKEY[modelKey] ?? TERMINAL_STAGE_BY_MODELKEY.default;
+
+  if (Number.isFinite(v) && Number.isFinite(m) && Number.isFinite(M) && stage === terminalStage) {
+    const outOfRange = (v < m) || (v > M);
+    if (outOfRange) {
+      // start licznika cofnięcia (domyślnie 12s)
+      startUndoCountdown(12, { stage, value: v, min: m, max: M, modelKey });
+    } else {
+      // jeżeli weszło w zakres — pewność, że nie ma aktywnego timera
+      cancelUndoCountdown();
+    }
+  }
+
+  console.log("[setMeasure]", { stage, value: v, min: m, max: M });
 }
 
 export function showMeasure() {
@@ -231,9 +237,9 @@ export function setSummaryRequiredSlots(n = 4) {
   window.Nexus.ui.summaryRequiredSlots = k;
   window.dispatchEvent(new Event("nexus:summary:required"));
 }
-// ============================================================================
-// 3) Rejestracja do window.Nexus.actions (tylko loader + pomiary)
-// ============================================================================
+
+/* --------------------------- Rejestracja akcji --------------------------- */
+
 if (typeof window !== "undefined") {
   window.Nexus ??= {};
   window.Nexus.actions ??= {};
@@ -244,14 +250,16 @@ if (typeof window !== "undefined") {
     setMeasure, showMeasure, hideMeasure, clearMeasure,
     fireSummaryUpdate, clearSummary, showSummary, hideSummary, clearSummarySlot,
     markMeasureInvalid, markBack, setSummaryRequiredSlots,
+    // Undo countdown (ręczne sterowanie z backendu, jeśli potrzeba)
+    startUndoCountdown,
+    cancelUndoCountdown,
   });
 
-  // Dwa eventy: „extended” do logów i „ready” dla handshake w main.jsx
   window.dispatchEvent(new Event("nexus:actions:extended"));
   window.dispatchEvent(new Event("nexus:actions:ready"));
 
   console.log(
-    "[Nexus] actions extended (measure+loader):",
+    "[Nexus] actions extended (measure+loader+undo):",
     Object.keys(window.Nexus.actions)
   );
 }

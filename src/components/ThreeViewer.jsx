@@ -1,4 +1,5 @@
-import React, { useEffect, useRef} from "react";
+// src/components/ThreeViewer.jsx
+import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import {
   createScene,
@@ -14,6 +15,9 @@ import {
   focusModelFourthStageSmooth,
 } from "./actions/index.js";
 
+// ⬇️ loader modeli (z Twojego pliku modelActions.jsx)
+import { loadFromProjectAndRotateX } from "./modelActions";
+
 export default function ThreeViewer() {
   const containerRef  = useRef(null);  // kontener całego viewer’a (relative)
   const mountRef      = useRef(null);  // tu wpina się renderer
@@ -28,10 +32,28 @@ export default function ThreeViewer() {
   const axesSceneRef  = useRef(null);
   const axesCameraRef = useRef(null);
 
+  // UI: stan ładowania + aktualny model
+  const [loading, setLoading] = useState(false);
+  const [activeModelKey, setActiveModelKey] = useState(null);
 
   // helper do wywołania etapów
   const callStage = (fn) => {
     fn?.({
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      modelRef,
+    });
+  };
+
+  // ładowanie modelu po numerze 1/2/3
+  const loadModel = async (n) => {
+    setActiveModelKey(String(n));
+    await loadFromProjectAndRotateX({
+      projectRelUrl: `${n}.gltf`,              // resolver zadba o /model/gltf/ bazę
+      onLoading: (isLoading) => setLoading(!!isLoading),
+      onLoaded: () => {},
+      // przekazujemy refs (możesz też polegać na window.Nexus.refs)
       sceneRef,
       cameraRef,
       controlsRef,
@@ -62,7 +84,6 @@ export default function ThreeViewer() {
 
     // viewer gotowy (refs istnieją) – powiadom lokalnie
     window.dispatchEvent(new Event("nexus:viewer:ready"));
-
 
     // --- overlay mini-osi (osobna scena + kamera, brak tła) ---
     const axesScene  = new THREE.Scene();
@@ -106,6 +127,7 @@ export default function ThreeViewer() {
       }
     };
     animate();
+
     // resize
     const onResize = () => {
       const w = mount.clientWidth;
@@ -130,7 +152,7 @@ export default function ThreeViewer() {
     };
   }, []);
 
-  // (opcjonalnie) skróty klawiaturowe 1–4
+  // skróty klawiaturowe 1–4 dla focusów
   useEffect(() => {
     const onKey = (e) => {
       if (e.repeat) return;
@@ -151,13 +173,45 @@ export default function ThreeViewer() {
       ref={containerRef}
       style={{ position: "absolute", inset: 0, overflow: "hidden" }}
     >
-      {/* Baner zadania nad sceną */}
-      {/* <TaskBannerWidget
-        topOffset={12}
-        initialVisible={true}
-        message="Zmierz wszystkie zaciski na wykonanym elemencie krok po kroku na podanej wizualizacji"
-      /> */}
-      {/* Panel przycisków nad sceną */}
+      {/* Panel wyboru modelu (prawo-góra) */}
+      <div
+        style={{
+          position: "absolute",
+          top: 12,
+          right: 12,
+          display: "flex",
+          gap: 8,
+          zIndex: 10,
+          pointerEvents: "none",
+        }}
+      >
+        <button
+          style={btnStyle}
+          disabled={loading || activeModelKey === "1"}
+          onClick={() => loadModel(1)}
+          title="Załaduj 1.gltf"
+        >
+          Model 1
+        </button>
+        <button
+          style={btnStyle}
+          disabled={loading || activeModelKey === "2"}
+          onClick={() => loadModel(2)}
+          title="Załaduj 2.gltf"
+        >
+          Model 2
+        </button>
+        <button
+          style={btnStyle}
+          disabled={loading || activeModelKey === "3"}
+          onClick={() => loadModel(3)}
+          title="Załaduj 3.gltf"
+        >
+          Model 3
+        </button>
+      </div>
+
+      {/* Panel etapów (lewo-góra) */}
       <div
         style={{
           position: "absolute",
@@ -166,10 +220,10 @@ export default function ThreeViewer() {
           display: "flex",
           gap: 8,
           zIndex: 10,
-          pointerEvents: "none", // nie blokuj orbitowania poza przyciskami
+          pointerEvents: "none",
         }}
       >
-        {/* <button
+        <button
           style={btnStyle}
           onClick={() => callStage(focusModelFirstStageSmooth)}
           title="Etap 1 (skrót: 1)"
@@ -196,8 +250,30 @@ export default function ThreeViewer() {
           title="Etap 4 (skrót: 4)"
         >
           Etap 4
-        </button> */}
+        </button>
       </div>
+
+      {/* subtelny overlay "Ładowanie…" */}
+      {loading && (
+        <div
+          style={{
+            position: "absolute",
+            top: 56,
+            right: 12,
+            zIndex: 11,
+            padding: "6px 10px",
+            borderRadius: 10,
+            border: "1px solid #ddd",
+            background: "rgba(255,255,255,0.9)",
+            backdropFilter: "blur(4px)",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+            fontSize: 13,
+            pointerEvents: "none",
+          }}
+        >
+          Ładowanie modelu…
+        </div>
+      )}
 
       {/* Mount na renderer */}
       <div
@@ -209,15 +285,15 @@ export default function ThreeViewer() {
 }
 
 // proste, czytelne style dla przycisków
-// const btnStyle = {
-//   pointerEvents: "auto",
-//   padding: "6px 10px",
-//   borderRadius: 10,
-//   border: "1px solid #ddd",
-//   background: "rgba(255,255,255,0.85)",
-//   backdropFilter: "blur(4px)",
-//   boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-//   fontSize: 14,
-//   cursor: "pointer",
-//   userSelect: "none",
-// };
+const btnStyle = {
+  pointerEvents: "auto",
+  padding: "6px 10px",
+  borderRadius: 10,
+  border: "1px solid #ddd",
+  background: "rgba(255,255,255,0.85)",
+  backdropFilter: "blur(4px)",
+  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+  fontSize: 14,
+  cursor: "pointer",
+  userSelect: "none",
+};
