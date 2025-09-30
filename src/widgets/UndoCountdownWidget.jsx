@@ -90,6 +90,7 @@ export default function UndoCountdownWidget({
 
     window.addEventListener("nexus:measure", onMeasure);
     return () => window.removeEventListener("nexus:measure", onMeasure);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seconds]);
 
   // 3) obsługa timera
