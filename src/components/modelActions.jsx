@@ -1,9 +1,9 @@
 // src/components/modelActions.jsx
-// Ten plik po refaktorze zawiera:
+// Ten plik zawiera:
 //  - ładowanie modelu (loadFromProjectAndRotateX)
 //  - moduł pomiarów i summary (setMeasure, show/hide/clearMeasure, ...)
 //  - sygnały do UndoCountdown (start/cancel + automatyczny trigger na etapie końcowym)
-//  - rejestrację WYŁĄCZNIE tych akcji w window.Nexus.actions
+//  - rejestrację WYŁĄCZNIE tych akcji w window.Nexus.actions oraz globalne mostki dla backendu
 
 import { disposeObject, loadGltfFromUrl } from "./threeUtils";
 import { rotateX90, setViewRight } from "./viewOps";
@@ -12,12 +12,13 @@ import { rotateX90, setViewRight } from "./viewOps";
 
 function resolveModelUrl(input) {
   if (!input || typeof input !== "string") return null;
-  if (/^(https?:|blob:|data:)/i.test(input)) return input;
-  if (input.startsWith("/")) return new URL(input, window.location.origin).href;
-  if (input.startsWith("../") || input.startsWith("./")) {
+  if (/^(https?:|blob:|data:)/i.test(input)) return input;                 // absolutne
+  if (input.startsWith("/")) return new URL(input, window.location.origin).href; // root-relative
+  if (input.startsWith("../") || input.startsWith("./")) {                 // relative → root
     const cleaned = input.replace(/^(\.\/)+/, "").replace(/^(\.\.\/)+/, "");
     return new URL("/" + cleaned, window.location.origin).href;
   }
+  // sama nazwa → domyślny katalog
   const base = (window.__NEXUS_MODELS_BASE__ || "/model/gltf/").replace(/\/+$/, "/");
   return new URL(base + input.replace(/^\/+/, ""), window.location.origin).href;
 }
@@ -67,6 +68,7 @@ export async function loadFromProjectAndRotateX(opts = {}) {
 
   cfg.onLoading(true);
   try {
+    // HEAD probe (ostrzeżenie; nie blokuje)
     try {
       const head = await fetch(src, { method: "HEAD" });
       const ct = head.headers.get("content-type") || "";
@@ -77,23 +79,27 @@ export async function loadFromProjectAndRotateX(opts = {}) {
       console.warn("[actions] probe (HEAD) failed — continuing anyway:", probeErr?.message || probeErr);
     }
 
+    // Usuń poprzedni model
     if (modelRef?.current) {
       scene.remove(modelRef.current);
       disposeObject(modelRef.current);
       modelRef.current = null;
     }
 
+    // Załaduj GLTF, obróć, dodaj do sceny
     const root = await loadGltfFromUrl(src);
     rotateX90(root);
     if (modelRef) modelRef.current = root;
     scene.add(root);
 
+    // Startowy widok
     setViewRight(camera, controls, root);
 
-    window.Nexus ??= {};
+    // meta
     const file = (new URL(src, window.location.origin).pathname.split("/").pop() || "");
     window.Nexus.modelMeta = { key: window.Nexus.modelKey, src, file };
 
+    // sygnały
     cfg.onLoaded(root);
     window.dispatchEvent(new Event("nexus:model:loaded"));
     window.Nexus?.send?.("ModelReady");
@@ -115,7 +121,7 @@ const TERMINAL_STAGE_BY_MODELKEY = {
   default: 4,
 };
 
-// proste API do uruchamiania/kończenia licznika cofnij
+// API do uruchamiania/kończenia licznika "cofnij" (emitujemy zdarzenia UI)
 export function startUndoCountdown(seconds = 12, extra = {}) {
   window.dispatchEvent(new CustomEvent("nexus:undo:start", {
     detail: { seconds, ...extra }
@@ -167,17 +173,15 @@ export function setMeasure(value, unit = "mm", min = null, max = null, stage = n
   // historia
   pushMeasureToHistory({ value: v, unit, min: m, max: M, stage, ts: Date.now() });
 
-  // 🔴 AUTOMATYCZNY TRIGGER COUNTDOWN NA ETAPIE KOŃCOWYM, TYLKO GDY POZA ZAKRESEM
+  // AUTO: jeśli to ostatni etap dla modelu i pomiar poza zakresem → startuj licznik cofnięcia
   const modelKey = window.Nexus?.modelKey || "default";
   const terminalStage = TERMINAL_STAGE_BY_MODELKEY[modelKey] ?? TERMINAL_STAGE_BY_MODELKEY.default;
 
   if (Number.isFinite(v) && Number.isFinite(m) && Number.isFinite(M) && stage === terminalStage) {
     const outOfRange = (v < m) || (v > M);
     if (outOfRange) {
-      // start licznika cofnięcia (domyślnie 12s)
       startUndoCountdown(12, { stage, value: v, min: m, max: M, modelKey });
     } else {
-      // jeżeli weszło w zakres — pewność, że nie ma aktywnego timera
       cancelUndoCountdown();
     }
   }
@@ -238,7 +242,7 @@ export function setSummaryRequiredSlots(n = 4) {
   window.dispatchEvent(new Event("nexus:summary:required"));
 }
 
-/* --------------------------- Rejestracja akcji --------------------------- */
+/* --------------------------- Rejestracja akcji + globalne mostki --------------------------- */
 
 if (typeof window !== "undefined") {
   window.Nexus ??= {};
@@ -250,10 +254,14 @@ if (typeof window !== "undefined") {
     setMeasure, showMeasure, hideMeasure, clearMeasure,
     fireSummaryUpdate, clearSummary, showSummary, hideSummary, clearSummarySlot,
     markMeasureInvalid, markBack, setSummaryRequiredSlots,
-    // Undo countdown (ręczne sterowanie z backendu, jeśli potrzeba)
+    // Undo countdown (ręczne sterowanie + do testów z konsoli)
     startUndoCountdown,
     cancelUndoCountdown,
   });
+
+  // 🔑 Globalne funkcje wołane z backendu przez CallReactAsync("startUndoCountdown", secs)
+  window.startUndoCountdown = (secs) => startUndoCountdown(secs);
+  window.cancelUndoCountdown = () => cancelUndoCountdown();
 
   window.dispatchEvent(new Event("nexus:actions:extended"));
   window.dispatchEvent(new Event("nexus:actions:ready"));

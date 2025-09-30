@@ -1,5 +1,5 @@
 // src/components/ThreeViewer.jsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import * as THREE from "three";
 import {
   createScene,
@@ -16,7 +16,7 @@ import {
 } from "./actions/index.js";
 
 // ⬇️ loader modeli (z Twojego pliku modelActions.jsx)
-import { loadFromProjectAndRotateX } from "./modelActions";
+//import { loadFromProjectAndRotateX } from "./modelActions";
 
 export default function ThreeViewer() {
   const containerRef  = useRef(null);  // kontener całego viewer’a (relative)
@@ -33,8 +33,8 @@ export default function ThreeViewer() {
   const axesCameraRef = useRef(null);
 
   // UI: stan ładowania + aktualny model
-  const [loading, setLoading] = useState(false);
-  const [activeModelKey, setActiveModelKey] = useState(null);
+  // const [loading, setLoading] = useState(false);
+  // const [activeModelKey, setActiveModelKey] = useState(null);
 
   // helper do wywołania etapów
   const callStage = (fn) => {
@@ -47,19 +47,19 @@ export default function ThreeViewer() {
   };
 
   // ładowanie modelu po numerze 1/2/3
-  const loadModel = async (n) => {
-    setActiveModelKey(String(n));
-    await loadFromProjectAndRotateX({
-      projectRelUrl: `${n}.gltf`,              // resolver zadba o /model/gltf/ bazę
-      onLoading: (isLoading) => setLoading(!!isLoading),
-      onLoaded: () => {},
-      // przekazujemy refs (możesz też polegać na window.Nexus.refs)
-      sceneRef,
-      cameraRef,
-      controlsRef,
-      modelRef,
-    });
-  };
+  // const loadModel = async (n) => {
+  //   setActiveModelKey(String(n));
+  //   await loadFromProjectAndRotateX({
+  //     projectRelUrl: `${n}.gltf`,              // resolver zadba o /model/gltf/ bazę
+  //     onLoading: (isLoading) => setLoading(!!isLoading),
+  //     onLoaded: () => {},
+  //     // przekazujemy refs (możesz też polegać na window.Nexus.refs)
+  //     sceneRef,
+  //     cameraRef,
+  //     controlsRef,
+  //     modelRef,
+  //   });
+  // };
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -174,7 +174,7 @@ export default function ThreeViewer() {
       style={{ position: "absolute", inset: 0, overflow: "hidden" }}
     >
       {/* Panel wyboru modelu (prawo-góra) */}
-      <div
+      {/* <div
         style={{
           position: "absolute",
           top: 12,
@@ -209,10 +209,10 @@ export default function ThreeViewer() {
         >
           Model 3
         </button>
-      </div>
+      </div> */}
 
       {/* Panel etapów (lewo-góra) */}
-      <div
+      {/* <div
         style={{
           position: "absolute",
           top: 12,
@@ -222,8 +222,8 @@ export default function ThreeViewer() {
           zIndex: 10,
           pointerEvents: "none",
         }}
-      >
-        <button
+      > */}
+        {/* <button
           style={btnStyle}
           onClick={() => callStage(focusModelFirstStageSmooth)}
           title="Etap 1 (skrót: 1)"
@@ -250,11 +250,11 @@ export default function ThreeViewer() {
           title="Etap 4 (skrót: 4)"
         >
           Etap 4
-        </button>
-      </div>
+        </button> */}
+      {/* </div> */}
 
       {/* subtelny overlay "Ładowanie…" */}
-      {loading && (
+      {/* {loading && (
         <div
           style={{
             position: "absolute",
@@ -273,7 +273,7 @@ export default function ThreeViewer() {
         >
           Ładowanie modelu…
         </div>
-      )}
+      )} */}
 
       {/* Mount na renderer */}
       <div
@@ -284,16 +284,16 @@ export default function ThreeViewer() {
   );
 }
 
-// proste, czytelne style dla przycisków
-const btnStyle = {
-  pointerEvents: "auto",
-  padding: "6px 10px",
-  borderRadius: 10,
-  border: "1px solid #ddd",
-  background: "rgba(255,255,255,0.85)",
-  backdropFilter: "blur(4px)",
-  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-  fontSize: 14,
-  cursor: "pointer",
-  userSelect: "none",
-};
+// // proste, czytelne style dla przycisków
+// const btnStyle = {
+//   pointerEvents: "auto",
+//   padding: "6px 10px",
+//   borderRadius: 10,
+//   border: "1px solid #ddd",
+//   background: "rgba(255,255,255,0.85)",
+//   backdropFilter: "blur(4px)",
+//   boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+//   fontSize: 14,
+//   cursor: "pointer",
+//   userSelect: "none",
+// };

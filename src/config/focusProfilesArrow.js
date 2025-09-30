@@ -18,7 +18,7 @@ const MODEL_1 = {
       labelFontSize: 24,
       labelSide: "bottom",
       gapPx: 14,
-      offsetPx: { x: -20, y: -494 }, // ekran: +y w dół, +x w prawo
+      offsetPx: { x: -20, y: -450 }, // ekran: +y w dół, +x w prawo
     },
     3: {
       text: "Misurare la larghezza del terzo morsetto",
@@ -34,7 +34,7 @@ const MODEL_1 = {
       labelFontSize: 26,
       labelSide: "bottom",
       gapPx: 14,
-      offsetPx: { x: -320, y: -160 }, // ekran: +y w dół, +x w prawo
+      offsetPx: { x: -290, y: -150 }, // ekran: +y w dół, +x w prawo
     },
   },
 };
@@ -42,10 +42,10 @@ const MODEL_1 = {
 // 2.gltf – delikatne przesunięcia i większa strzałka w 1 etapie
 const MODEL_2 = {
   stages: {
-    1: {text: "Misurare la larghezza del primo morsetto", offsetPx: { x: -160, y: 464 }, arrowSize: 150 }, // ekran: +y w dół, +x w prawo
-    2: {text: "Misurare la larghezza del secondo morsetto", offsetPx: { x: -605,  y: -676 } }, // ekran: +y w dół, +x w prawo
-    3: {text: "Misurare la larghezza del terzo morsetto", offsetPx: { x: -210, y: 220 } }, // ekran: +y w dół, +x w prawo
-    4: {text: "Misurare la larghezza del quarto morsetto", offsetPx: { x: -40,  y: -410 } }, // ekran: +y w dół, +x w prawo
+    1: {text: "Misurare la larghezza del primo morsetto", offsetPx: { x: -150, y: 454 }, arrowSize: 150 }, // ekran: +y w dół, +x w prawo
+    2: {text: "Misurare la larghezza del secondo morsetto", offsetPx: { x: -560,  y: -636 } }, // ekran: +y w dół, +x w prawo
+    3: {text: "Misurare la larghezza del terzo morsetto", offsetPx: { x: -200, y: 220 } }, // ekran: +y w dół, +x w prawo
+    4: {text: "Misurare la larghezza del quarto morsetto", offsetPx: { x: -40,  y: -390 } }, // ekran: +y w dół, +x w prawo
   },
 };
 
@@ -56,13 +56,13 @@ const MODEL_3 = {
       text: "Misurare la larghezza del primo morsetto", 
       arrowSize: 140,
       labelFontSize: 26,
-      offsetPx: { x: 570, y: -350 }, // ekran: +y w dół, +x w prawo
+      offsetPx: { x: 540, y: -320 }, // ekran: +y w dół, +x w prawo
     },
     2: {
       text: "Misurare la larghezza del secondo morsetto", 
       arrowSize: 140,
       labelFontSize: 26,
-      offsetPx: { x: 638, y: -240 }, // ekran: +y w dół, +x w prawo
+      offsetPx: { x: 600, y: -220 }, // ekran: +y w dół, +x w prawo
     },
     // brak 3 i 4
   },

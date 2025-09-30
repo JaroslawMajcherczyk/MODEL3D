@@ -7,16 +7,10 @@ import React, { useEffect, useRef, useState } from "react";
  *  - ostatni pomiar jest poza [min, max]
  *
  * Zdarzenia, których słucha:
- *  - "nexus:model:key" → zna aktywny model ("1","2","3", lub "default")
- *  - "nexus:measure"   → dostaje { value, min, max, stage }
- *
- * Co robi:
- *  - gdy wykryje out-of-range na ostatnim etapie → startuje licznik (domyślnie 12 s)
- *  - przycisk „Cofnij pomiar”:
- *      * wyśle window.Nexus.actions?.markBack?.()  (frontendowe)
- *      * wyśle window.Nexus.send?.("Back")         (do backendu przez SignalR)
- *  - w trakcie odliczania zasłania UI półprzezroczystym overlayem (nie modyfikuje innych widgetów)
- *  - po 0 s znika samoczynnie
+ *  - "nexus:model:key"  → zna aktywny model ("1","2","3", lub "default")
+ *  - "nexus:measure"    → dostaje { value, min, max, stage }
+ *  - "nexus:back"       → NATYCHMIAST chowa widget (cofnięcie z backendu/UI)
+ *  - "nexus:undo:cancel"→ NATYCHMIAST chowa widget (anulowanie z backendu)
  */
 
 const TERMINAL_STAGE_BY_MODELKEY = {
@@ -28,9 +22,8 @@ const TERMINAL_STAGE_BY_MODELKEY = {
 
 export default function UndoCountdownWidget({
   seconds = 12,
-  // teksty / wygląd
+  // teksty / wygląd (POZOSTAWIONE BEZ ZMIAN)
   title = "Tempo rimanente prima che l'ultima misurazione venga annullata",
-  btnText = "Annulla misurazione",
   bg = "rgba(15, 23, 42, 0.55)", // przyciemnienie tła
   cardBg = "#ffffff",
   textColor = "#101828",
@@ -64,18 +57,16 @@ export default function UndoCountdownWidget({
       const max = d.max;
       const stage = d.stage;
 
-      // zabezpieczenia
       if (typeof v !== "number" || typeof min !== "number" || typeof max !== "number") return;
       if (!Number.isFinite(stage)) return;
 
-      // czy to ostatni wymagany etap dla aktywnego modelu?
-      const terminalStage = TERMINAL_STAGE_BY_MODELKEY[modelKeyRef.current] ?? TERMINAL_STAGE_BY_MODELKEY.default;
+      const terminalStage =
+        TERMINAL_STAGE_BY_MODELKEY[modelKeyRef.current] ?? TERMINAL_STAGE_BY_MODELKEY.default;
       if (stage !== terminalStage) return;
 
-      // czy poza zakresem?
-      const outOfRange = (v < min) || (v > max);
+      const outOfRange = v < min || v > max;
 
-      // NIE startuj ponownie, jeśli to dokładnie ten sam pomiar (debounce po timestampach)
+      // Debounce (nie startuj 2x dla tego samego pomiaru)
       const nowTs = Date.now();
       if (outOfRange && nowTs - lastMeasureTsRef.current < 300) return;
 
@@ -83,19 +74,30 @@ export default function UndoCountdownWidget({
         lastMeasureTsRef.current = nowTs;
         startCountdown();
       } else {
-        // w zakresie → upewnij się, że widget nie przeszkadza
         stopCountdown();
       }
     };
 
     window.addEventListener("nexus:measure", onMeasure);
     return () => window.removeEventListener("nexus:measure", onMeasure);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seconds]);
 
-  // 3) obsługa timera
+  // 3) CHOWANIE przy cofnięciu/zamknięciu z backendu
+  useEffect(() => {
+    const onBack = () => stopCountdown();            // cofnięcie (np. ten sam przycisk co wcześniej)
+    const onCancel = () => stopCountdown();          // jawne anulowanie z backendu
+    window.addEventListener("nexus:back", onBack);
+    window.addEventListener("nexus:undo:cancel", onCancel);
+    return () => {
+      window.removeEventListener("nexus:back", onBack);
+      window.removeEventListener("nexus:undo:cancel", onCancel);
+    };
+  }, []);
+
+  // 4) obsługa timera
   function startCountdown() {
-    stopCountdown(); // wyczyść ewentualny poprzedni
+    stopCountdown(); // reset, jeśli już coś leciało
     setRemain(seconds);
     setVisible(true);
     deadlineRef.current = performance.now() + seconds * 1000;
@@ -118,34 +120,20 @@ export default function UndoCountdownWidget({
     if (leftMs > 0) {
       timerRef.current = requestAnimationFrame(tick);
     } else {
-      // koniec czasu → znikamy, nie robimy "back"
-      stopCountdown();
+      stopCountdown(); // koniec czasu → znikamy
     }
-  }
-
-  // 4) Cofnięcie pomiaru (klik)
-  function handleBack() {
-    try {
-      // frontendowy event (masz już markBack w actions)
-      window.Nexus?.actions?.markBack?.();
-    } catch {/** */}
-    try {
-      // sygnał do backendu (SignalR) — jeśli masz handler na "Back", zareaguje
-      window.Nexus?.send?.("Back");
-    } catch {/** */}
-    stopCountdown();
   }
 
   if (!visible) return null;
 
-  // UI (overlay + karta z licznikiem)
+  // UI (overlay + karta z licznikiem) — WYGLĄD POZOSTAJE IDENTYCZNY
   return (
     <div
       style={{
         position: "fixed",
         inset: 0,
         background: bg,
-        zIndex: 999999,            // nad innymi widgetami
+        zIndex: 999999, // nad innymi widgetami
         display: "grid",
         placeItems: "center",
         pointerEvents: "auto",
@@ -195,42 +183,8 @@ export default function UndoCountdownWidget({
 
         <div style={{ fontSize: 28, fontWeight: 600 }}>{title}</div>
         <div style={{ fontSize: 22, color: "#475467" }}>
-         L'ultima misurazione era al di fuori dell'intervallo consentito. Puoi annullare e ripetere l'operazione: andremo avanti una volta trascorso il tempo impostato.
-        </div>
-
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
-          <button
-            onClick={stopCountdown}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #D0D5DD",
-              background: "#FFFFFF",
-              color: "#344054",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-            title="Continua senza annullare"
-          >
-            Continuare
-          </button>
-
-          <button
-            onClick={handleBack}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #085D3A",
-              background: "#12B76A",
-              color: "white",
-              fontWeight: 700,
-              cursor: "pointer",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
-            }}
-            title="Annulla l'ultima misurazione"
-          >
-            {btnText}
-          </button>
+          L'ultima misurazione era al di fuori dell'intervallo consentito. Puoi annullare e
+          ripetere l'operazione: andremo avanti una volta trascorso il tempo impostato.
         </div>
       </div>
     </div>
