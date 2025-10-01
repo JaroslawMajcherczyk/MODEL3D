@@ -1,5 +1,7 @@
-// ThreeViewer.jsx
-import React, { useEffect, useRef, useState } from "react";
+
+// src/components/ThreeViewer.jsx
+import React, { useEffect, useRef } from "react";
+
 import * as THREE from "three";
 import {
   createScene,
@@ -15,22 +17,24 @@ import {
   focusModelFourthStageSmooth,
 } from "./actions/index.js";
 
-// ⬇️ DODANE: loader modeli z Twojego pliku modelActions.jsx
+
 import { loadFromProjectAndRotateX } from "./modelActions";
 
+
 // proste, czytelne style dla przycisków
-const btnStyle = {
-  pointerEvents: "auto",
-  padding: "6px 10px",
-  borderRadius: 10,
-  border: "1px solid #ddd",
-  background: "rgba(255,255,255,0.85)",
-  backdropFilter: "blur(4px)",
-  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-  fontSize: 14,
-  cursor: "pointer",
-  userSelect: "none",
-};
+//const btnStyle = {
+//  pointerEvents: "auto",
+//  padding: "6px 10px",
+//  borderRadius: 10,
+//  border: "1px solid #ddd",
+//  background: "rgba(255,255,255,0.85)",
+//  backdropFilter: "blur(4px)",
+//  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+//  fontSize: 14,
+//  cursor: "pointer",
+//  userSelect: "none",
+//};
+
 
 export default function ThreeViewer() {
   const containerRef  = useRef(null);
@@ -46,9 +50,10 @@ export default function ThreeViewer() {
   const axesSceneRef  = useRef(null);
   const axesCameraRef = useRef(null);
 
-  // ⬇️ DODANE: stan ładowania i aktualnie wybrany model
-  const [loading, setLoading] = useState(false);
-  const [activeModelKey, setActiveModelKey] = useState(null);
+  // UI: stan ładowania + aktualny model
+  // const [loading, setLoading] = useState(false);
+  // const [activeModelKey, setActiveModelKey] = useState(null);
+
 
   // helper do wywołania etapów
   const callStage = (fn) => {
@@ -74,6 +79,21 @@ export default function ThreeViewer() {
     });
   };
 
+  // ładowanie modelu po numerze 1/2/3
+  // const loadModel = async (n) => {
+  //   setActiveModelKey(String(n));
+  //   await loadFromProjectAndRotateX({
+  //     projectRelUrl: `${n}.gltf`,              // resolver zadba o /model/gltf/ bazę
+  //     onLoading: (isLoading) => setLoading(!!isLoading),
+  //     onLoaded: () => {},
+  //     // przekazujemy refs (możesz też polegać na window.Nexus.refs)
+  //     sceneRef,
+  //     cameraRef,
+  //     controlsRef,
+  //     modelRef,
+  //   });
+  // };
+
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
@@ -94,7 +114,9 @@ export default function ThreeViewer() {
     window.Nexus.refs = { sceneRef, cameraRef, controlsRef, modelRef, rendererRef, mountRef };
     window.dispatchEvent(new Event("nexus:viewer:ready"));
 
-    // overlay mini-osi
+
+    // --- overlay mini-osi (osobna scena + kamera, brak tła) ---
+
     const axesScene  = new THREE.Scene();
     const axesCamera = new THREE.PerspectiveCamera(50, 1, 0.01, 10);
     axesCamera.position.set(0, 0, 3);
@@ -177,47 +199,10 @@ export default function ThreeViewer() {
     <div
       ref={containerRef}
       style={{ position: "absolute", inset: 0, overflow: "hidden" }}
-    >
-      {/* ⬇️ NOWY: panel wyboru modelu */}
-      <div
-        style={{
-          position: "absolute",
-          top: 12,
-          right: 12,
-          display: "flex",
-          gap: 8,
-          zIndex: 10,
-          pointerEvents: "none",
-        }}
-      >
-        <button
-          style={btnStyle}
-          disabled={loading || activeModelKey === "1"}
-          onClick={() => loadModel(1)}
-          title="Załaduj 1.gltf"
-        >
-          Model 1
-        </button>
-        <button
-          style={btnStyle}
-          disabled={loading || activeModelKey === "2"}
-          onClick={() => loadModel(2)}
-          title="Załaduj 2.gltf"
-        >
-          Model 2
-        </button>
-        <button
-          style={btnStyle}
-          disabled={loading || activeModelKey === "3"}
-          onClick={() => loadModel(3)}
-          title="Załaduj 3.gltf"
-        >
-          Model 3
-        </button>
-      </div>
-
-      {/* Panel etapów (zostaje jak było) */}
-      <div
+    />
+      
+      {/* Panel etapów (lewo-góra) */}
+      {/* <div
         style={{
           position: "absolute",
           top: 12,
@@ -227,8 +212,8 @@ export default function ThreeViewer() {
           zIndex: 10,
           pointerEvents: "none",
         }}
-      >
-        <button
+      > */}
+        {/* <button
           style={btnStyle}
           onClick={() => callStage(focusModelFirstStageSmooth)}
           title="Etap 1 (skrót: 1)"
@@ -255,11 +240,11 @@ export default function ThreeViewer() {
           title="Etap 4 (skrót: 4)"
         >
           Etap 4
-        </button>
-      </div>
+        </button> */}
+      {/* </div> */}
 
       {/* subtelny overlay "Ładowanie…" */}
-      {loading && (
+      {/* {loading && (
         <div
           style={{
             position: "absolute",
@@ -278,10 +263,19 @@ export default function ThreeViewer() {
         >
           Ładowanie modelu…
         </div>
-      )}
+      )} */}
 
-      {/* Mount na renderer */}
-      <div ref={mountRef} style={{ position: "absolute", inset: 0 }} />
-    </div>
-  );
-}
+// // proste, czytelne style dla przycisków
+// const btnStyle = {
+//   pointerEvents: "auto",
+//   padding: "6px 10px",
+//   borderRadius: 10,
+//   border: "1px solid #ddd",
+//   background: "rgba(255,255,255,0.85)",
+//   backdropFilter: "blur(4px)",
+//   boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+//   fontSize: 14,
+//   cursor: "pointer",
+//   userSelect: "none",
+};
+

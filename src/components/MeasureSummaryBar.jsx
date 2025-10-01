@@ -53,7 +53,7 @@ export default function MeasureSummaryBar({ topOffset = 12 }) {
             fontFamily: "system-ui, Segoe UI, Roboto, sans-serif"
           }}>
             <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 2 }}>
-              Etap {i + 1}
+              Palcoscenico {i + 1}
             </div>
             <div style={{ fontSize: 28, fontWeight: 800, lineHeight: 1 }}>
               {has ? m.value.toFixed(2) : "—"}{" "}

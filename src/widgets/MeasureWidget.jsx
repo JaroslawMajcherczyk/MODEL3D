@@ -69,13 +69,13 @@ export default function MeasureWidget({ topOffset = 18 }) {
         backdropFilter: "blur(2px)",
       }}
     >
-      <div style={{ fontSize: 14, opacity: 0.9, marginBottom: 4 }}>Pomiar</div>
+      <div style={{ fontSize: 14, opacity: 0.9, marginBottom: 4 }}>Misurazione</div>
       <div style={{ fontSize: 36, fontWeight: 800, lineHeight: 1.0 }}>
         {shown}&nbsp;<span style={{ fontSize: 20, fontWeight: 600 }}>{unit || ""}</span>
       </div>
       {(typeof min === "number" && typeof max === "number") && (
         <div style={{ fontSize: 14, opacity: 0.95, marginTop: 6 }}>
-          Zakres: {min.toFixed(2)} – {max.toFixed(2)} {unit || ""}
+          Allineare: {min.toFixed(2)} – {max.toFixed(2)} {unit || ""}
         </div>
       )}
     </div>

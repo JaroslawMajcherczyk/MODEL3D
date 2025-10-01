@@ -1,6 +1,8 @@
 // src/components/widgets/ArrowHudWidget.jsx
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+// Jeśli masz helper getViewportMetrics w threeUtils, możesz go też użyć.
+// import { getViewportMetrics } from "../../threeUtils";
 
 function worldToScreen(world, camera, w, h) {
   if (!world || !camera || !Number.isFinite(w) || !Number.isFinite(h)) {
@@ -115,8 +117,20 @@ export default function ArrowHudWidget({
       const camera   = refs?.cameraRef?.current;
       const renderer = refs?.rendererRef?.current;
       const mount    = refs?.mountRef?.current;
-      const w = renderer?.domElement?.clientWidth ?? mount?.clientWidth ?? window.innerWidth;
-      const h = renderer?.domElement?.clientHeight ?? mount?.clientHeight ?? window.innerHeight;
+
+      // 🟢 ZAMIANA: bierzemy rozmiar z renderera w CSS px (spójny dla WebView/CEF/Chrome)
+      let w = 0, h = 0;
+      if (renderer) {
+        const css = new THREE.Vector2();
+        renderer.getSize(css); // CSS px
+        w = css.x;
+        h = css.y;
+      }
+      // fallbacki (gdyby renderer nie był jeszcze gotów)
+      if (!w || !h) {
+        w = mount?.clientWidth  ?? document.documentElement.clientWidth  ?? 1;
+        h = mount?.clientHeight ?? document.documentElement.clientHeight ?? 1;
+      }
 
       const { offsetPx: off } = optsRef.current;
 

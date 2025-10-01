@@ -62,8 +62,8 @@ export default function FinalQualityWidget({
   const list = outOf.join(", ");
 
   const msgOk =
-    "Pomiary przeprowadzone na wszystkich zaciskach mieszczą się w podanej normie, można kontynuować produkcję.";
-  const msgBad = `Pomiary z ${plural} ${list} nie mieszczą się w normie, proszę o poinformowanie działu konserwacji w celu rozwiązania zaistniałej sytuacji.`;
+    "Le misurazioni effettuate su tutti i terminali rientrano nello standard specificato, la produzione può continuare.";
+  const msgBad = `Misure da ${plural} ${list} non rientrano nella norma, si prega di informare il reparto manutenzione per risolvere la situazione.`;
 
   return (
     <div
